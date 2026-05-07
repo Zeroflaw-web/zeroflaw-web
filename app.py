@@ -735,20 +735,31 @@ async def index(request: Request):
 
 @app.post("/scan/upload", response_class=HTMLResponse)
 async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), provider: str = Form("")):
-    """Accept a zip upload, extract, scan via SSE, return HTML report."""
+    """Accept a zip upload or single file, extract/process, scan, return HTML report."""
     scan_id = str(uuid.uuid4())[:8]
     tmpdir_obj = tempfile.TemporaryDirectory()
     tmpdir = tmpdir_obj.name
 
-    zip_path = os.path.join(tmpdir, "project.zip")
-    with open(zip_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    extract_to = os.path.join(tmpdir, "project")
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(extract_to)
-
     target_name = file.filename or "upload"
+    is_zip = file.filename and file.filename.endswith(".zip")
+
+    if is_zip:
+        # Extract zip
+        zip_path = os.path.join(tmpdir, "project.zip")
+        with open(zip_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        extract_to = os.path.join(tmpdir, "project")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_to)
+    else:
+        # Single file — put in a temp directory
+        extract_to = os.path.join(tmpdir, "project")
+        os.makedirs(extract_to)
+        file_path = os.path.join(extract_to, file.filename or "upload.txt")
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
 
     # Stream results via SSE
     events = []

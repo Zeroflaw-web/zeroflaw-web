@@ -133,9 +133,9 @@
     <form id="uploadForm" action="/scan/upload" method="post" enctype="multipart/form-data" target="resultFrame">
       <div class="drop-zone" id="dropZone">
         <div class="icon">📁</div>
-        <div class="text">Drop your project .zip here or click to browse</div>
-        <div class="subtext">Supports Python, JavaScript, TypeScript, Go, Java, and more</div>
-        <input type="file" name="file" accept=".zip" id="fileInput" required>
+        <div class="text">Drop your project .zip or source file here or click to browse</div>
+        <div class="subtext">Supports .zip, .py, .js, .ts, .java, .go, .rs, .rb, .yaml, .json, and more</div>
+        <input type="file" name="file" accept=".zip,.py,.js,.ts,.jsx,.tsx,.java,.go,.rs,.rb,.php,.yml,.yaml,.json,.html,.css" id="fileInput" required>
       </div>
 
       <!-- API Key Section -->
