@@ -134,7 +134,7 @@ def register_tools(mcp):
             if result.returncode != 0:
                 return f"❌ Clone failed: {result.stderr[:300]}"
 
-            results = run_scans(clone_to)
+            results = run_scans(clone_to, quick=True)
             summary = format_results_markdown(repo_name, results)
             return summary
         except subprocess.TimeoutExpired:
@@ -143,20 +143,36 @@ def register_tools(mcp):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     @mcp.tool()
-    def scan_directory(path: str, api_key: str = "") -> str:
-        """Run all security scans on a local directory.
+    def scan_url_full(repo_url: str) -> str:
+        """Clone a GitHub URL and run ALL security scans (including slow Semgrep + Trivy)."""
+        import urllib.parse
+        repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        tmpdir = tempfile.mkdtemp()
+        clone_to = os.path.join(tmpdir, "repo")
+        try:
+            result = subprocess.run(
+                ["git", "clone", "--depth", "1", repo_url, clone_to],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0:
+                return f"❌ Clone failed: {result.stderr[:300]}"
+            results = run_scans(clone_to, quick=False)
+            summary = format_results_markdown(repo_name, results)
+            return summary
+        except subprocess.TimeoutExpired:
+            return "❌ Clone timed out"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
-        Args:
-            path: Absolute path to the directory to scan
-            api_key: Optional OpenAI-compatible API key for AI-powered report summary
-
-        Returns:
-            A markdown summary of scan results with findings organized by severity.
-        """
+    @mcp.tool()
+    def scan_directory(path: str) -> str:
+        """Run security scans on a local directory (quick mode, skips Semgrep + Trivy)."""
         if not os.path.isdir(path):
             return f"❌ Path does not exist or is not a directory: {path}"
 
-        results = run_scans(path)
+        results = run_scans(path, quick=True)
         summary = format_results_markdown(os.path.basename(path), results)
         return summary
 
@@ -215,8 +231,8 @@ def run_trivy(path: str) -> dict:
         return {"error": str(e)}
 
 
-def run_scans(project_path: str) -> dict:
-    """Run all scans on a project directory."""
+def run_scans(project_path: str, quick: bool = False) -> dict:
+    """Run all scans on a project directory. Use quick=True to skip slow scanners."""
     from server import (
         run_security_scan,
         run_code_linting,
@@ -227,14 +243,15 @@ def run_scans(project_path: str) -> dict:
 
     results = {"scans": {}, "summary": {"total": 0}}
 
-    # Run independent scans in parallel
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             pool.submit(run_security_scan, project_path): "bandit",
             pool.submit(run_code_linting, project_path): "ruff",
-            pool.submit(run_universal_security_scan, project_path): "semgrep",
-            pool.submit(run_trivy, project_path): "trivy",
         }
+        if not quick:
+            futures[pool.submit(run_universal_security_scan, project_path)] = "semgrep"
+            futures[pool.submit(run_trivy, project_path)] = "trivy"
         if os.path.isfile(os.path.join(project_path, "package.json")):
             futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
         if os.path.isfile(os.path.join(project_path, "requirements.txt")):
