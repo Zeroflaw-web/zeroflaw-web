@@ -76,7 +76,10 @@ def run_http(host: str, port: int):
     from starlette.middleware.cors import CORSMiddleware as _CORSMiddleware
     app = mcp.sse_app()
     app.add_middleware(_CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-    uvicorn.run(app, host=host, port=port)
+    # Allow any host header (needed behind Render's proxy)
+    import starlette.middleware.trustedhost as _th
+    app.add_middleware(_th.TrustedHostMiddleware, allowed_hosts=["*"])
+    uvicorn.run(app, host=host, port=port, forwarded_allow_ips="*")
 
 
 # ── Tool Registration ─────────────────────────────────────────────────
