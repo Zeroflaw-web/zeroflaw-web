@@ -246,7 +246,8 @@ def run_scans(project_path: str, quick: bool = False) -> dict:
 
     results = {"scans": {}, "summary": {"total": 0}}
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, wait as _wait
+    from concurrent.futures import TimeoutError as _TimeoutError
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             pool.submit(run_security_scan, project_path): "bandit",
@@ -260,7 +261,15 @@ def run_scans(project_path: str, quick: bool = False) -> dict:
         if os.path.isfile(os.path.join(project_path, "requirements.txt")):
             futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
 
-        for future in as_completed(futures):
+        # Wait for all with 60s timeout
+        done, not_done = _wait(futures, timeout=60)
+        # Mark timed-out scans as errors
+        for future in not_done:
+            key = futures[future]
+            future.cancel()
+            results["scans"][key] = {"error": "timed out after 60s"}
+
+        for future in done:
             key = futures[future]
             try:
                 results["scans"][key] = future.result()

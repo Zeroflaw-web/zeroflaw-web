@@ -913,7 +913,7 @@ def run_scans_sync(project_path: str) -> dict:
         scan_npm_dependencies, scan_python_dependencies,
     )
     results = {"scans": {}}
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, wait as _wait
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             pool.submit(run_security_scan, project_path): "bandit",
@@ -925,7 +925,10 @@ def run_scans_sync(project_path: str) -> dict:
             futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
         if os.path.isfile(os.path.join(project_path, "requirements.txt")):
             futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
-        for future in as_completed(futures):
+        done, not_done = _wait(futures, timeout=60)
+        for future in not_done:
+            future.cancel()
+        for future in done:
             key = futures[future]
             try:
                 results["scans"][key] = future.result()
