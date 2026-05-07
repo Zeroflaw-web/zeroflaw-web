@@ -256,13 +256,14 @@ def run_scans(project_path: str, quick: bool = False) -> dict:
         if not quick:
             futures[pool.submit(run_universal_security_scan, project_path)] = "semgrep"
             futures[pool.submit(run_trivy, project_path)] = "trivy"
-        if os.path.isfile(os.path.join(project_path, "package.json")):
+        if not quick and os.path.isfile(os.path.join(project_path, "package.json")):
             futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
-        if os.path.isfile(os.path.join(project_path, "requirements.txt")):
+        if not quick and os.path.isfile(os.path.join(project_path, "requirements.txt")):
             futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
 
-        # Wait for all with 60s timeout
-        done, not_done = _wait(futures, timeout=60)
+        # Wait — 15s for quick, 60s for full
+        timeout = 15 if quick else 60
+        done, not_done = _wait(futures, timeout=timeout)
         # Mark timed-out scans as errors
         for future in not_done:
             key = futures[future]
