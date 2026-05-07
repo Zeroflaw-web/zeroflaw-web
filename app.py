@@ -956,6 +956,21 @@ def format_results_markdown(target_name: str, results: dict) -> str:
     return "\n".join(lines)
 
 
+# ── MCP Server (served from same app to avoid Cloudflare 421) ─────────
+from mcp.server.fastmcp import FastMCP as _FastMCP
+_mcp = _FastMCP("ZeroFlaw Security Scanner")
+
+from mcp_server import register_tools as _reg_mcp
+_reg_mcp(_mcp)
+
+import starlette.middleware.cors as _cors
+import starlette.middleware.trustedhost as _th
+_mcp_app = _mcp.sse_app()
+_mcp_app.add_middleware(_cors.CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_mcp_app.add_middleware(_th.TrustedHostMiddleware, allowed_hosts=["*"])
+app.mount("/mcp", _mcp_app)
+
+
 @app.get("/download/{report_id}")
 async def download_report(report_id: str):
     """Serve a saved HTML report for download."""
