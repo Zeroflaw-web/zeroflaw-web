@@ -129,16 +129,19 @@ def register_tools(mcp):
         try:
             result = subprocess.run(
                 ["git", "clone", "--depth", "1", repo_url, clone_to],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=300,
             )
             if result.returncode != 0:
-                return f"❌ Clone failed: {result.stderr[:300]}"
+                err = result.stderr[:300]
+                if "could not read Username" in err or "Authentication failed" in err:
+                    return f"❌ Clone failed — private repo needs a token. Use https://<token>@github.com/user/repo or try scan_directory with a local path."
+                return f"❌ Clone failed: {err}"
 
             results = run_scans(clone_to, quick=True)
             summary = format_results_markdown(repo_name, results)
             return summary
         except subprocess.TimeoutExpired:
-            return "❌ Clone timed out after 120s"
+            return "❌ Clone timed out after 5 minutes. Try a smaller repo or use scan_directory with a local path."
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
