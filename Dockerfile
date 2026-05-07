@@ -41,7 +41,7 @@ COPY templates/ templates/
 RUN mkdir -p uploads
 
 # Expose port
-EXPOSE 8555
+EXPOSE 8555 8556
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
