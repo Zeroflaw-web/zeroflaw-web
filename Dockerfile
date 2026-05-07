@@ -47,5 +47,5 @@ EXPOSE 8555 8556
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8555/health')" || exit 1
 
-# Run both web app and MCP server
-CMD ["sh", "-c", "python mcp_server.py --port 8556 --host 0.0.0.0 & uvicorn app:app --host 0.0.0.0 --port 8555"]
+# Run with uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8555"]

@@ -900,8 +900,116 @@ async def scan_json(file: UploadFile = File(...)):
         extract_to = os.path.join(tmpdir, "project")
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_to)
-        results = scan_project(extract_to)
+        results = run_scans_sync(extract_to)
     return results
+
+
+# ── Sync scan helpers (for MCP tools) ────────────────────────────────
+
+def run_scans_sync(project_path: str) -> dict:
+    """Run all scans synchronously. Returns results dict."""
+    from server import (
+        run_security_scan, run_code_linting, run_universal_security_scan,
+        scan_npm_dependencies, scan_python_dependencies,
+    )
+    results = {"scans": {}}
+    results["scans"]["bandit"] = run_security_scan(project_path)
+    results["scans"]["ruff"] = run_code_linting(project_path)
+    results["scans"]["semgrep"] = run_universal_security_scan(project_path)
+    if os.path.isfile(os.path.join(project_path, "package.json")):
+        results["scans"]["npm_audit"] = scan_npm_dependencies(project_path)
+    if os.path.isfile(os.path.join(project_path, "requirements.txt")):
+        results["scans"]["pip_audit"] = scan_python_dependencies(project_path)
+    results["scans"]["trivy"] = run_trivy_safe(project_path)
+    return results
+
+
+def format_results_markdown(target_name: str, results: dict) -> str:
+    """Format scan results as concise markdown."""
+    scans = results.get("scans", {})
+    lines = [f"# ZeroFlaw Scan: {target_name}", ""]
+    sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    for scan_name, data in scans.items():
+        if not isinstance(data, dict):
+            continue
+        if "error" in data:
+            lines.append(f"## {scan_name}\n{data['error']}\n")
+            continue
+        findings = data.get("results", [])
+        if not findings:
+            continue
+        lines.append(f"## {scan_name} ({len(findings)} findings)")
+        for f in findings[:15]:
+            sev = (f.get("issue_severity") or "LOW").upper()
+            if sev in sev_counts:
+                sev_counts[sev] += 1
+            fp = f.get("filename", "?")
+            ln = f.get("line_number", "")
+            msg = f.get("issue_text", "")[:120]
+            icon = {"CRITICAL": "💀", "HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}.get(sev, "⚪")
+            lines.append(f"- {icon} [{sev}] `{fp}:{ln}` — {msg}")
+        if len(findings) > 15:
+            lines.append(f"  ...+{len(findings)-15} more")
+        lines.append("")
+    total = sum(sev_counts.values())
+    lines.append(f"---\n**{total} total:** 💀 {sev_counts['CRITICAL']} · 🔴 {sev_counts['HIGH']} · 🟡 {sev_counts['MEDIUM']} · 🔵 {sev_counts['LOW']}")
+    return "\n".join(lines)
+
+
+# ── MCP Server (mounted on /sse for Claude Desktop) ────────────────────
+
+from mcp.server.fastmcp import FastMCP
+
+zeroflaw_mcp = FastMCP("ZeroFlaw Security Scanner")
+
+@zeroflaw_mcp.tool()
+def mcp_health() -> str:
+    """Check which security scanners are available."""
+    scanners = {
+        "bandit": bool(shutil.which("bandit")),
+        "ruff": bool(shutil.which("ruff")),
+        "semgrep": bool(shutil.which("semgrep")),
+        "trivy": bool(shutil.which("trivy")),
+    }
+    available = [k for k, v in scanners.items() if v]
+    return f"Scanners: {', '.join(available)}"
+
+
+@zeroflaw_mcp.tool()
+def mcp_scan_url(repo_url: str) -> str:
+    """Clone a GitHub URL and run all security scans. Returns markdown results."""
+    import urllib.parse
+    repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+    tmpdir = tempfile.mkdtemp()
+    clone_to = os.path.join(tmpdir, "repo")
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, clone_to],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            return f"Clone failed: {result.stderr[:200]}"
+        results = run_scans_sync(clone_to)
+        return format_results_markdown(repo_name, results)
+    except subprocess.TimeoutExpired:
+        return "Clone timed out"
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@zeroflaw_mcp.tool()
+def mcp_scan_directory(path: str) -> str:
+    """Run all security scans on a local directory. Returns markdown results."""
+    if not os.path.isdir(path):
+        return f"Path not found: {path}"
+    results = run_scans_sync(path)
+    return format_results_markdown(os.path.basename(path), results)
+
+
+# Mount MCP SSE app
+app.mount("/sse", zeroflaw_mcp.sse_app())
 
 
 @app.get("/download/{report_id}")
