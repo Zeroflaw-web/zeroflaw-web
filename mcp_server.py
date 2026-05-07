@@ -72,7 +72,8 @@ def run_http(host: str, port: int):
 
     register_tools(mcp)
     print(f"ZeroFlaw MCP Server running at http://{host}:{port}/sse", flush=True)
-    mcp.run(transport="sse", host=host, port=port)
+    import uvicorn
+    uvicorn.run(mcp.sse_app(), host=host, port=port)
 
 
 # ── Tool Registration ─────────────────────────────────────────────────
