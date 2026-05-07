@@ -35,6 +35,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Add parent to path for imports
@@ -226,21 +227,27 @@ def run_scans(project_path: str) -> dict:
 
     results = {"scans": {}, "summary": {"total": 0}}
 
-    # Static analysis
-    results["scans"]["bandit"] = run_security_scan(project_path)
-    results["scans"]["ruff"] = run_code_linting(project_path)
-    results["scans"]["semgrep"] = run_universal_security_scan(project_path)
+    # Run independent scans in parallel
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            pool.submit(run_security_scan, project_path): "bandit",
+            pool.submit(run_code_linting, project_path): "ruff",
+            pool.submit(run_universal_security_scan, project_path): "semgrep",
+            pool.submit(run_trivy, project_path): "trivy",
+        }
+        if os.path.isfile(os.path.join(project_path, "package.json")):
+            futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
+        if os.path.isfile(os.path.join(project_path, "requirements.txt")):
+            futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
 
-    # Dependencies
-    if os.path.isfile(os.path.join(project_path, "package.json")):
-        results["scans"]["npm_audit"] = scan_npm_dependencies(project_path)
-    if os.path.isfile(os.path.join(project_path, "requirements.txt")):
-        results["scans"]["pip_audit"] = scan_python_dependencies(project_path)
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results["scans"][key] = future.result()
+            except Exception as e:
+                results["scans"][key] = {"error": str(e)}
 
-    # Trivy
-    results["scans"]["trivy"] = run_trivy(project_path)
-
-    # Secrets detection
+    # Secrets detection (fast, no subprocess)
     secret_findings = scan_secrets(project_path)
     results["scans"]["secrets"] = {"results": secret_findings}
 

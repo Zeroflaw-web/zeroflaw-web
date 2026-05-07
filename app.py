@@ -907,20 +907,30 @@ async def scan_json(file: UploadFile = File(...)):
 # ── Sync scan helpers (for MCP tools) ────────────────────────────────
 
 def run_scans_sync(project_path: str) -> dict:
-    """Run all scans synchronously. Returns results dict."""
+    """Run all scans in parallel. Returns results dict."""
     from server import (
         run_security_scan, run_code_linting, run_universal_security_scan,
         scan_npm_dependencies, scan_python_dependencies,
     )
     results = {"scans": {}}
-    results["scans"]["bandit"] = run_security_scan(project_path)
-    results["scans"]["ruff"] = run_code_linting(project_path)
-    results["scans"]["semgrep"] = run_universal_security_scan(project_path)
-    if os.path.isfile(os.path.join(project_path, "package.json")):
-        results["scans"]["npm_audit"] = scan_npm_dependencies(project_path)
-    if os.path.isfile(os.path.join(project_path, "requirements.txt")):
-        results["scans"]["pip_audit"] = scan_python_dependencies(project_path)
-    results["scans"]["trivy"] = run_trivy_safe(project_path)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            pool.submit(run_security_scan, project_path): "bandit",
+            pool.submit(run_code_linting, project_path): "ruff",
+            pool.submit(run_universal_security_scan, project_path): "semgrep",
+            pool.submit(run_trivy_safe, project_path): "trivy",
+        }
+        if os.path.isfile(os.path.join(project_path, "package.json")):
+            futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
+        if os.path.isfile(os.path.join(project_path, "requirements.txt")):
+            futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results["scans"][key] = future.result()
+            except Exception as e:
+                results["scans"][key] = {"error": str(e)}
     return results
 
 
