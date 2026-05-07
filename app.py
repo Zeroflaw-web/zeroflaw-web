@@ -956,62 +956,6 @@ def format_results_markdown(target_name: str, results: dict) -> str:
     return "\n".join(lines)
 
 
-# ── MCP Server (mounted on /sse for Claude Desktop) ────────────────────
-
-from mcp.server.fastmcp import FastMCP
-
-zeroflaw_mcp = FastMCP("ZeroFlaw Security Scanner")
-
-@zeroflaw_mcp.tool()
-def mcp_health() -> str:
-    """Check which security scanners are available."""
-    scanners = {
-        "bandit": bool(shutil.which("bandit")),
-        "ruff": bool(shutil.which("ruff")),
-        "semgrep": bool(shutil.which("semgrep")),
-        "trivy": bool(shutil.which("trivy")),
-    }
-    available = [k for k, v in scanners.items() if v]
-    return f"Scanners: {', '.join(available)}"
-
-
-@zeroflaw_mcp.tool()
-def mcp_scan_url(repo_url: str) -> str:
-    """Clone a GitHub URL and run all security scans. Returns markdown results."""
-    import urllib.parse
-    repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
-    if repo_name.endswith(".git"):
-        repo_name = repo_name[:-4]
-    tmpdir = tempfile.mkdtemp()
-    clone_to = os.path.join(tmpdir, "repo")
-    try:
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", repo_url, clone_to],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            return f"Clone failed: {result.stderr[:200]}"
-        results = run_scans_sync(clone_to)
-        return format_results_markdown(repo_name, results)
-    except subprocess.TimeoutExpired:
-        return "Clone timed out"
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@zeroflaw_mcp.tool()
-def mcp_scan_directory(path: str) -> str:
-    """Run all security scans on a local directory. Returns markdown results."""
-    if not os.path.isdir(path):
-        return f"Path not found: {path}"
-    results = run_scans_sync(path)
-    return format_results_markdown(os.path.basename(path), results)
-
-
-# Mount MCP SSE app
-app.mount("/sse", zeroflaw_mcp.sse_app())
-
-
 @app.get("/download/{report_id}")
 async def download_report(report_id: str):
     """Serve a saved HTML report for download."""
