@@ -925,13 +925,16 @@ def run_scans_sync(project_path: str) -> dict:
     )
     results = {"scans": {}}
     from concurrent.futures import ThreadPoolExecutor, wait as _wait
+    # Only run Python scanners if .py files exist
+    _has_py = any(f.endswith(".py") for _, _, fs in os.walk(project_path) for f in fs
+                  if not any(d in _ for d in (".venv", "venv", "node_modules", ".git", "__pycache__")))
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {
-            pool.submit(run_security_scan, project_path): "bandit",
-            pool.submit(run_code_linting, project_path): "ruff",
-            pool.submit(run_universal_security_scan, project_path): "semgrep",
-            pool.submit(run_trivy_safe, project_path): "trivy",
-        }
+        futures = {}
+        if _has_py:
+            futures[pool.submit(run_security_scan, project_path)] = "bandit"
+            futures[pool.submit(run_code_linting, project_path)] = "ruff"
+        futures[pool.submit(run_universal_security_scan, project_path)] = "semgrep"
+        futures[pool.submit(run_trivy_safe, project_path)] = "trivy"
         if os.path.isfile(os.path.join(project_path, "package.json")):
             futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
         if os.path.isfile(os.path.join(project_path, "requirements.txt")):

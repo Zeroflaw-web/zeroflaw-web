@@ -246,13 +246,25 @@ def run_scans(project_path: str, quick: bool = False) -> dict:
 
     results = {"scans": {}, "summary": {"total": 0}}
 
+    # Detect project languages — skip Python scanners if no .py files
+    _has_py = False
+    for root, dirs, files in os.walk(project_path):
+        dirs[:] = [d for d in dirs if d not in (".venv", "venv", "node_modules", ".git", "__pycache__")]
+        for f in files:
+            if f.endswith(".py"):
+                _has_py = True
+                break
+        if _has_py:
+            break
+
     from concurrent.futures import ThreadPoolExecutor, wait as _wait
     from concurrent.futures import TimeoutError as _TimeoutError
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {
-            pool.submit(run_security_scan, project_path): "bandit",
-            pool.submit(run_code_linting, project_path): "ruff",
-        }
+        futures = {}
+        # Only run Python scanners if Python files exist
+        if _has_py:
+            futures[pool.submit(run_security_scan, project_path)] = "bandit"
+            futures[pool.submit(run_code_linting, project_path)] = "ruff"
         if not quick:
             futures[pool.submit(run_universal_security_scan, project_path)] = "semgrep"
             futures[pool.submit(run_trivy, project_path)] = "trivy"
