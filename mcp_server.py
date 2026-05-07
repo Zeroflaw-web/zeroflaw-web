@@ -73,7 +73,10 @@ def run_http(host: str, port: int):
     register_tools(mcp)
     print(f"ZeroFlaw MCP Server running at http://{host}:{port}/sse", flush=True)
     import uvicorn
-    uvicorn.run(mcp.sse_app(), host=host, port=port)
+    from starlette.middleware.cors import CORSMiddleware as _CORSMiddleware
+    app = mcp.sse_app()
+    app.add_middleware(_CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    uvicorn.run(app, host=host, port=port)
 
 
 # ── Tool Registration ─────────────────────────────────────────────────
