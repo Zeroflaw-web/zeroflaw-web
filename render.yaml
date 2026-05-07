@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: zeroflaw-web
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8555

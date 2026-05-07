@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZeroFlaw Web — Security Scanner</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #020617; color: #e2e8f0; line-height: 1.6; min-height: 100vh;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+  
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0F172A 0%, #020617 100%);
+    border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 40px;
+    text-align: center; margin-bottom: 24px; position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ''; position: absolute; top: -50%; left: 50%; transform: translateX(-50%);
+    width: 400px; height: 400px; background: rgba(34,211,238,0.08);
+    border-radius: 50%; filter: blur(100px); pointer-events: none;
+  }
+  .hero h1 { color: #f1f5f9; font-size: 32px; margin-bottom: 8px; position: relative; }
+  .hero h1 span { background: linear-gradient(135deg, #22d4ee, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { color: #64748b; font-size: 15px; max-width: 500px; margin: 0 auto; position: relative; }
+  .badge-row { display: flex; justify-content: center; gap: 8px; margin: 20px 0 0; flex-wrap: wrap; position: relative; }
+  .badge { display: inline-block; padding: 4px 14px; border-radius: 100px; font-size: 11px; font-weight: 500; }
+  .badge-py { background: rgba(34,211,238,0.08); color: #22d4ee; border: 1px solid rgba(34,211,238,0.15); }
+  .badge-js { background: rgba(234,179,8,0.08); color: #eab308; border: 1px solid rgba(234,179,8,0.15); }
+  .badge-dep { background: rgba(34,197,94,0.08); color: #3fb950; border: 1px solid rgba(34,197,94,0.15); }
+  .badge-all { background: rgba(168,85,247,0.08); color: #a78bfa; border: 1px solid rgba(168,85,247,0.15); }
+
+  /* Card */
+  .card {
+    background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px;
+    padding: 24px; margin-bottom: 16px;
+  }
+  .card h2 { color: #f1f5f9; font-size: 18px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .card .desc { color: #64748b; font-size: 13px; margin-bottom: 16px; }
+
+  /* Inputs */
+  .input-group { display: flex; gap: 8px; }
+  .input-group input, input[type="text"], input[type="url"], input[type="password"] {
+    flex: 1; padding: 12px 16px; background: #020617; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; color: #e2e8f0; font-size: 14px; transition: border-color 0.2s;
+  }
+  .input-group input:focus, input:focus { outline: none; border-color: #22d4ee; }
+  input::placeholder { color: #475569; }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed rgba(255,255,255,0.08); border-radius: 12px; padding: 32px;
+    text-align: center; cursor: pointer; transition: all 0.2s; position: relative;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: rgba(34,211,238,0.4); background: rgba(34,211,238,0.03); }
+  .drop-zone .icon { font-size: 40px; margin-bottom: 8px; }
+  .drop-zone .text { color: #94a3b8; font-size: 14px; }
+  .drop-zone .subtext { color: #475569; font-size: 12px; margin-top: 4px; }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  /* Buttons */
+  .btn {
+    padding: 12px 24px; background: #22d4ee; color: #020617; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;
+  }
+  .btn:hover { background: #1bb3cc; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(34,211,238,0.2); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary { background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.08); }
+  .btn-secondary:hover { background: rgba(255,255,255,0.08); box-shadow: none; }
+
+  /* API key toggle */
+  .api-section { margin-top: 16px; }
+  .api-toggle { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 13px; cursor: pointer; }
+  .api-toggle:hover { color: #94a3b8; }
+  .api-toggle .chevron { transition: transform 0.2s; }
+  .api-toggle .chevron.open { transform: rotate(90deg); }
+  .api-field { display: none; margin-top: 10px; }
+  .api-field.open { display: block; }
+  .api-field .hint { color: #475569; font-size: 11px; margin-top: 6px; }
+  .api-field .hint code { background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 4px; color: #22d4ee; }
+
+  /* Status */
+  .status { display: none; margin-top: 16px; padding: 14px 20px; border-radius: 10px; text-align: center; font-size: 14px; background: rgba(34,211,238,0.06); border: 1px solid rgba(34,211,238,0.1); }
+  .status.loading { display: block; }
+  .status .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(34,211,238,0.3); border-top-color: #22d4ee; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { display: flex; align-items: center; gap: 16px; margin: 24px 0; color: #334155; font-size: 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
+
+  .footer { text-align: center; color: #334155; font-size: 12px; margin-top: 40px; }
+  .footer a { color: #22d4ee; text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+  .terminal-panel { background: #0F172A; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; }
+  .terminal-dots { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .terminal-dot.red { background: #ef4444; } .terminal-dot.yellow { background: #eab308; } .terminal-dot.green { background: #22c55e; }
+  .terminal-body { padding: 16px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
+  .terminal-prompt { color: #64748b; margin-bottom: 8px; }
+  .terminal-line { margin: 4px 0; display: flex; align-items: center; gap: 8px; animation: fadeSlide 0.3s ease; }
+  @keyframes fadeSlide { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .dot.ok { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+  .dot.warn { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.5); }
+  .dot.err { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+  .dot.busy { background: #22d4ee; box-shadow: 0 0 6px rgba(34,211,238,0.5); animation: pulse 0.8s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Hero -->
+  <div class="hero">
+    <h1>🛡️ <span>ZeroFlaw</span> Web</h1>
+    <p>Upload your project or paste a GitHub URL to run automated security scans. Optionally add an API key for AI-powered analysis.</p>
+    <div class="badge-row">
+      <span class="badge badge-py">🐍 Bandit</span>
+      <span class="badge badge-py">📐 Ruff</span>
+      <span class="badge badge-all">🔬 Semgrep</span>
+      <span class="badge badge-dep">🔍 Trivy</span>
+      <span class="badge badge-js">📦 npm audit</span>
+      <span class="badge badge-py">📦 pip audit</span>
+    </div>
+  </div>
+
+  <!-- Upload ZIP -->
+  <div class="card">
+    <h2>📤 Upload ZIP</h2>
+    <p class="desc">Upload your project as a .zip file. All files are scanned in-memory and deleted after.</p>
+    <form id="uploadForm" action="/scan/upload" method="post" enctype="multipart/form-data" target="resultFrame">
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📁</div>
+        <div class="text">Drop your project .zip here or click to browse</div>
+        <div class="subtext">Supports Python, JavaScript, TypeScript, Go, Java, and more</div>
+        <input type="file" name="file" accept=".zip" id="fileInput" required>
+      </div>
+
+      <!-- API Key Section -->
+      <div class="api-section">
+        <div class="api-toggle" onclick="toggleApi('upload')">
+          <span class="chevron" id="chevron-upload">▶</span>
+          <span>Add API key for AI-powered report (optional)</span>
+        </div>
+        <div class="api-field" id="api-field-upload">
+          <div style="display:flex;gap:8px;">
+            <input type="password" name="api_key" placeholder="sk-..." style="flex:1;">
+            <select name="provider" style="padding:12px;background:#020617;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;font-size:13px;">
+              <option value="">Auto-detect</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="anthropic">Claude</option>
+              <option value="groq">Groq</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </div>
+          <div class="hint">Select provider if auto-detect doesn't work. Your key is not stored.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <button type="submit" class="btn" id="uploadBtn">Scan Upload</button>
+      </div>
+    </form>
+    <div class="status" id="uploadStatus">
+      <span class="spinner"></span> Extracting project files...
+    </div>
+    <!-- Scan terminal (shown during scan) -->
+    <div class="terminal-panel" id="scanTerminal" style="display:none;margin-top:16px;">
+      <div class="terminal-dots">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+      </div>
+      <div class="terminal-body" id="terminalBody">
+        <p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">OR</div>
+
+  <!-- GitHub URL -->
+  <div class="card">
+    <h2>🔗 GitHub URL</h2>
+    <p class="desc">Paste a public GitHub repository URL. It will be cloned, scanned, and results delivered.</p>
+    <form id="urlForm" action="/scan/url" method="post" target="resultFrame">
+      <div class="input-group">
+        <input type="url" name="repo_url" placeholder="https://github.com/user/repo" required>
+        <button type="submit" class="btn" id="urlBtn">Scan URL</button>
+      </div>
+
+      <!-- API Key Section -->
+      <div class="api-section">
+        <div class="api-toggle" onclick="toggleApi('url')">
+          <span class="chevron" id="chevron-url">▶</span>
+          <span>Add API key for AI-powered report (optional)</span>
+        </div>
+        <div class="api-field" id="api-field-url">
+          <div style="display:flex;gap:8px;">
+            <input type="password" name="api_key" placeholder="sk-..." style="flex:1;">
+            <select name="provider" style="padding:12px;background:#020617;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;font-size:13px;">
+              <option value="">Auto-detect</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="anthropic">Claude</option>
+              <option value="groq">Groq</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </div>
+          <div class="hint">Select provider if auto-detect doesn't work.</div>
+        </div>
+      </div>
+    </form>
+    <div class="status" id="urlStatus">
+      <span class="spinner"></span> Cloning repository...
+    </div>
+    <!-- Scan terminal (reused for URL scans) -->
+  </div>
+
+  <div class="divider">—</div>
+
+  <!-- API Access -->
+  <div class="card" style="text-align:center;">
+    <h2 style="justify-content:center;">💻 API Access</h2>
+    <p class="desc">For CI/CD pipelines, use the JSON API endpoint. Pass your API key via the <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">X-Api-Key</code> header.</p>
+    <code style="display:block;padding:12px;margin:8px 0;background:#020617;border-radius:8px;font-size:12px;text-align:left;color:#22d4ee;">
+      curl -F "file=@project.zip" \<br>
+      &nbsp;&nbsp;-H "X-Api-Key: sk-..." \<br>
+      &nbsp;&nbsp;https://your-app.onrender.com/scan/json
+    </code>
+  </div>
+
+  <div class="footer">
+    Powered by <a href="https://github.com/aquasecurity/trivy" target="_blank">Trivy</a> ·
+    <a href="https://bandit.readthedocs.io/" target="_blank">Bandit</a> ·
+    <a href="https://docs.astral.sh/ruff/" target="_blank">Ruff</a> ·
+    <a href="https://semgrep.dev/" target="_blank">Semgrep</a>
+  </div>
+</div>
+
+<script>
+  // Drag-and-drop
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) fileInput.files = e.dataTransfer.files;
+  });
+
+  // API key toggle
+  function toggleApi(form) {
+    document.getElementById('api-field-' + form).classList.toggle('open');
+    document.getElementById('chevron-' + form).classList.toggle('open');
+  }
+
+  // Terminal helper
+  const uploadSteps = [
+    'Extracting project files...',
+    'Initializing scanners...',
+    'Running Bandit (Python security)...',
+    'Running Ruff (Python linting)...',
+    'Running Semgrep (multi-language SAST)...',
+    'Checking dependencies...',
+    'Running Trivy (dependency scan)...',
+    'Scanning for secrets...',
+    'Generating report...',
+  ];
+
+  const urlSteps = [
+    'Cloning repository from GitHub...',
+    'Initializing scanners...',
+    'Running Bandit (Python security)...',
+    'Running Ruff (Python linting)...',
+    'Running Semgrep (multi-language SAST)...',
+    'Checking dependencies...',
+    'Running Trivy (dependency scan)...',
+    'Scanning for secrets...',
+    'Generating report...',
+  ];
+
+  function showTerminal(steps) {
+    var t = document.getElementById('scanTerminal');
+    var b = document.getElementById('terminalBody');
+    t.style.display = 'block';
+    b.innerHTML = '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p>';
+    var i = 0;
+    function addLine(text, type) {
+      var p = document.createElement('p');
+      p.className = 'terminal-line';
+      var dot = type === 'ok' ? 'ok' : type === 'warn' ? 'warn' : type === 'err' ? 'err' : 'busy';
+      if (type === 'done') {
+        p.innerHTML = '<span style="color:#22c55e">' + text + '</span>';
+      } else {
+        p.innerHTML = '<span class="dot ' + dot + '"></span> ' + text;
+      }
+      b.appendChild(p);
+      b.scrollTop = b.scrollHeight;
+    }
+    function playSteps() {
+      if (i >= steps.length) { addLine('Complete! Loading report...', 'done'); return; }
+      addLine(steps[i], 'busy');
+      i++;
+      setTimeout(playSteps, i === 1 ? 600 : 900);
+    }
+    playSteps();
+  }
+
+  // Upload form
+  document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('uploadStatus').style.display = 'block';
+    document.getElementById('uploadBtn').disabled = true;
+    showTerminal(uploadSteps);
+    var formData = new FormData(this);
+    fetch('/scan/upload', { method: 'POST', body: formData })
+      .then(r => r.text())
+      .then(html => { document.open(); document.write(html); document.close(); })
+      .catch(err => { document.getElementById('terminalBody').innerHTML += '<p class="terminal-line" style="color:#ef4444">Error: ' + err + '</p>'; });
+  });
+
+  // URL form
+  document.getElementById('urlForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('urlStatus').style.display = 'block';
+    document.getElementById('urlBtn').disabled = true;
+    showTerminal(urlSteps);
+    var formData = new FormData(this);
+    fetch('/scan/url', { method: 'POST', body: formData })
+      .then(r => r.text())
+      .then(html => { document.open(); document.write(html); document.close(); })
+      .catch(err => { document.getElementById('terminalBody').innerHTML += '<p class="terminal-line" style="color:#ef4444">Error: ' + err + '</p>'; });
+  });
+</script>
+</body>
+</html>
