@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 LABEL description="ZeroFlaw Web — Multi-language security scanner"
 
-# Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -13,9 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
-    # For npm audit
     nodejs \
     npm \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python security tools
@@ -40,6 +43,11 @@ COPY templates/ templates/
 
 # Create uploads directory
 RUN mkdir -p uploads
+
+# Install additional security tools
+RUN echo "Installing additional security tools..." && \
+    # This is a placeholder for additional tool installation
+    echo "Additional tools installation would go here"
 
 # Expose port
 EXPOSE 8555

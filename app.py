@@ -21,6 +21,7 @@ from typing import Optional
 
 import asyncio
 import httpx
+from weasyprint import HTML as WeasyHTML
 from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -112,11 +113,12 @@ def detect_provider(api_key: str, provider_hint: str = ""):
 
     # If user explicitly selected a provider, use it
     explicit = {
-        "openai":     ("https://api.openai.com/v1",           "gpt-4o",                "OpenAI"),
-        "deepseek":   ("https://api.deepseek.com/v1",         "deepseek-chat",          "DeepSeek"),
-        "anthropic":  ("https://api.anthropic.com/v1",        "claude-sonnet-4-20250514", "Anthropic Claude"),
-        "groq":       ("https://api.groq.com/openai/v1",      "llama-3.3-70b-versatile", "Groq"),
-        "openrouter": ("https://openrouter.ai/api/v1",        "openai/gpt-4o",          "OpenRouter"),
+        "openai":     ("https://api.openai.com/v1",                "gpt-4o",                    "OpenAI"),
+        "deepseek":   ("https://api.deepseek.com/v1",              "deepseek-chat",              "DeepSeek"),
+        "anthropic":  ("https://api.anthropic.com/v1",             "claude-sonnet-4-20250514",  "Anthropic Claude"),
+        "groq":       ("https://api.groq.com/openai/v1",           "llama-3.3-70b-versatile",   "Groq"),
+        "openrouter": ("https://openrouter.ai/api/v1",             "openai/gpt-4o",             "OpenRouter"),
+        "nvidia":     ("https://integrate.api.nvidia.com/v1",      "meta/llama-3.1-70b-instruct", "NVIDIA"),
     }
     if provider_hint and provider_hint in explicit:
         return explicit[provider_hint]
@@ -129,7 +131,11 @@ def detect_provider(api_key: str, provider_hint: str = ""):
         ("gsk_",       "https://api.groq.com/openai/v1",           "llama-3.3-70b-versatile",  "Groq"),
         ("fkey-",      "https://api.fireworks.ai/inference/v1",    "accounts/fireworks/models/llama-v3p1-70b-instruct", "Fireworks"),
         ("tgpv",       "https://api.together.xyz/v1",              "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "Together AI"),
+        ("nvapi-",     "https://integrate.api.nvidia.com/v1",      "meta/llama-3.1-70b-instruct", "NVIDIA"),
+        ("sk-",        "https://api.deepseek.com/v1",              "deepseek-chat",               "DeepSeek"),
     ]
+
+    # Note: sk- keys match DeepSeek by default. Select "OpenAI" from the dropdown for OpenAI keys.
 
     # Check default env var keys
     env_keys = {
@@ -138,6 +144,7 @@ def detect_provider(api_key: str, provider_hint: str = ""):
         "OPENAI_API_KEY":    ("https://api.openai.com/v1",         "gpt-4o",                   "OpenAI"),
         "GROQ_API_KEY":      ("https://api.groq.com/openai/v1",    "llama-3.3-70b-versatile",  "Groq"),
         "OPENROUTER_API_KEY":("https://openrouter.ai/api/v1",      "openai/gpt-4o",            "OpenRouter"),
+        "NVIDIA_API_KEY":    ("https://integrate.api.nvidia.com/v1","meta/llama-3.1-70b-instruct", "NVIDIA"),
     }
 
     # 1. Check if this key matches a known prefix pattern
@@ -324,34 +331,6 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
     medium = sev_map["MEDIUM"]
     low = sev_map["LOW"]
 
-    # Scan status lines (terminal panel)
-    scan_status_lines = ""
-    # Detect languages for display
-    has_py = any(f['file'].endswith('.py') for f in findings_list if f.get('file'))
-    lang_tag = "Python" if has_py else "multi-language"
-    scan_display_names = [
-        ("bandit", f"Bandit ({lang_tag} Security)", "🐍"),
-        ("ruff", f"Ruff ({lang_tag} Linting)", "📐"),
-        ("semgrep", "Semgrep (Multi-Language SAST)", "🔬"),
-        ("npm_audit", "npm Audit", "📦"),
-        ("pip_audit", "pip Audit", "🐍"),
-        ("trivy", "Trivy Dependency Scan", "🔍"),
-        ("secrets", "Secrets Detection", "🔑"),
-    ]
-    for key, label, icon in scan_display_names:
-        d = scans.get(key, {})
-        if isinstance(d, dict) and "error" in d:
-            scan_status_lines += f'<p class="terminal-line error"><span class="status-dot err"></span> {icon} {label} — skipped ({d["error"][:60]})</p>'
-        elif isinstance(d, dict) and not d.get("results") and not d.get("vulnerabilities") and not d.get("Results"):
-            scan_status_lines += f'<p class="terminal-line"><span class="status-dot ok"></span> {icon} {label} — clean</p>'
-        else:
-            count = 0
-            if d.get("results"): count = len(d["results"])
-            elif isinstance(d.get("vulnerabilities"), dict): count = len(d["vulnerabilities"])
-            elif d.get("Results"):
-                for r in d["Results"]: count += len(r.get("Vulnerabilities", []))
-            scan_status_lines += f'<p class="terminal-line warn"><span class="status-dot warn"></span> {icon} {label} — {count} issue(s)</p>'
-
     # Build findings HTML
     findings_html = ""
     for f in findings_list[:100]:
@@ -416,24 +395,14 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
   .report-header .meta-item strong {{ color: #94a3b8; }}
   .report-header .download-btn {{ display: inline-block; padding: 8px 20px; background: #22d4ee; color: #020617; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }}
   .report-header .download-btn:hover {{ background: #1bb3cc; }}
-  .terminal-panel {{ background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; margin: 24px; overflow: hidden; }}
-  .terminal-dots {{ display: flex; gap: 8px; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }}
-  .terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
-  .terminal-dot.red {{ background: #ef4444; }} .terminal-dot.yellow {{ background: #eab308; }} .terminal-dot.green {{ background: #22c55e; }}
-  .terminal-body {{ padding: 20px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 13px; }}
-  .terminal-prompt {{ color: #64748b; margin-bottom: 16px; }}
-  .terminal-line {{ margin: 6px 0; display: flex; align-items: center; gap: 8px; }}
-  .status-dot {{ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }}
-  .status-dot.ok {{ background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.5); }}
-  .status-dot.warn {{ background: #eab308; box-shadow: 0 0 8px rgba(234,179,8,0.5); }}
-  .status-dot.err {{ background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }}
-  .summary-line {{ margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 15px; }}
+  .report-header .download-btn.pdf {{ background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.1); }}
+  .report-header .download-btn.pdf:hover {{ background: rgba(255,255,255,0.12); }}
   .stats-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px; }}
   .stat-card {{ background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 20px; text-align: center; }}
   .stat-card .num {{ font-size: 36px; font-weight: 800; line-height: 1; }}
   .stat-card .label {{ color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 8px; }}
   .stat-card .num.critical {{ color: #ff7b72; }} .stat-card .num.high {{ color: #d29922; }} .stat-card .num.medium {{ color: #d29922; }} .stat-card .num.low {{ color: #22d4ee; }}
-  .risk-badge {{ display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 100px; font-weight: 600; font-size: 14px; margin: 0 24px; }}
+  .risk-badge {{ display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 100px; font-weight: 600; font-size: 14px; margin: 24px; }}
   .risk-badge.critical {{ background: rgba(239,68,68,0.1); color: #ff7b72; border: 1px solid rgba(239,68,68,0.2); }}
   .risk-badge.high {{ background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }}
   .risk-badge.medium {{ background: rgba(234,179,8,0.08); color: #d29922; border: 1px solid rgba(234,179,8,0.15); }}
@@ -460,15 +429,50 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
   .verdict-pass {{ background: rgba(34,197,94,0.1); color: #3fb950; border: 1px solid rgba(34,197,94,0.2); }}
   .verdict-caveats {{ background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }}
   .verdict-review {{ background: rgba(239,68,68,0.1); color: #ff7b72; border: 1px solid rgba(239,68,68,0.2); }}
-  .terminal-body {{ padding: 20px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 13px; }}
-  .terminal-prompt {{ color: #64748b; margin-bottom: 16px; }}
-  .terminal-line {{ margin: 6px 0; display: flex; align-items: center; gap: 8px; opacity: 0; animation: fadeIn 0.3s ease forwards; }}
-  @keyframes fadeIn {{ to {{ opacity: 1; }} }}
-  .status-dot {{ width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }}
-
-  .report-header .download-btn {{ display: inline-block; padding: 8px 20px; background: #22d4ee; color: #020617; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }}
-  .back-btn:hover {{ background: #1bb3cc; transform: translateY(-2px); box-shadow: 0 4px 24px rgba(34,211,238,0.25); }}
-  .footer {{ text-align: center; color: #334155; font-size: 12px; padding: 24px; border-top: 1px solid rgba(255,255,255,0.05); }}
+  @page {{ margin: 2cm 2.5cm; size: A4; }}
+  @media print {{
+    body {{ background: #fff !important; color: #1a1a1a !important; font-size: 11pt; line-height: 1.5; }}
+    .container {{ max-width: 100%; padding: 0; }}
+    .report-header {{ background: #f8f9fa !important; border-bottom: 2px solid #222 !important; padding: 24px 0 !important; }}
+    .report-header h1 {{ font-size: 20pt; color: #000 !important; }}
+    .report-header .subtitle {{ color: #555 !important; font-size: 10pt; }}
+    .report-header .meta-item {{ color: #444 !important; font-size: 9pt; }}
+    .report-header .meta-item strong {{ color: #222 !important; }}
+    .report-header .download-btn {{ display: none !important; }}
+    .stat-card {{ background: #f8f9fa !important; border: 1px solid #ddd !important; border-radius: 6px; padding: 12px; }}
+    .stat-card .num {{ font-size: 28pt; }}
+    .stat-card .num.critical {{ color: #b91c1c !important; }}
+    .stat-card .num.high {{ color: #b45309 !important; }}
+    .stat-card .num.medium {{ color: #a16207 !important; }}
+    .stat-card .num.low {{ color: #15803d !important; }}
+    .stat-card .label {{ color: #555 !important; }}
+    .risk-badge {{ border: 1px solid #ccc !important; background: #f8f9fa !important; color: #000 !important; }}
+    .risk-badge.critical {{ background: #fef2f2 !important; color: #b91c1c !important; border-color: #b91c1c !important; }}
+    .risk-badge.high {{ background: #fffbeb !important; color: #b45309 !important; border-color: #b45309 !important; }}
+    .risk-badge.medium {{ background: #fefce8 !important; color: #a16207 !important; border-color: #a16207 !important; }}
+    .risk-badge.low {{ background: #f0fdf4 !important; color: #15803d !important; border-color: #15803d !important; }}
+    .section-title {{ color: #000 !important; font-size: 13pt; border-bottom: 1px solid #ddd; padding-bottom: 6px; }}
+    .finding-row {{ background: #fafafa !important; border: 1px solid #e5e5e5 !important; border-radius: 4px; break-inside: avoid; }}
+    .finding-sev.sev-critical {{ color: #b91c1c !important; }}
+    .finding-sev.sev-high {{ color: #b45309 !important; }}
+    .finding-sev.sev-medium {{ color: #a16207 !important; }}
+    .finding-sev.sev-low {{ color: #15803d !important; }}
+    .finding-meta {{ color: #444 !important; }}
+    .finding-meta code {{ background: #f0f0f0 !important; color: #333 !important; }}
+    .finding-scanner {{ background: #e8f4f8 !important; color: #0369a1 !important; }}
+    .finding-msg {{ color: #333 !important; font-size: 10pt; }}
+    .fixed-version {{ color: #15803d !important; }}
+    .ai-section {{ background: #f8f9fa !important; border: 1px solid #bbb !important; }}
+    .ai-section h2 {{ color: #000 !important; }}
+    .ai-section p {{ color: #333 !important; }}
+    .ai-section code {{ background: #f0f0f0 !important; color: #333 !important; }}
+    .verdict-pass {{ background: #f0fdf4 !important; color: #15803d !important; border-color: #15803d !important; }}
+    .verdict-caveats {{ background: #fffbeb !important; color: #b45309 !important; border-color: #b45309 !important; }}
+    .verdict-review {{ background: #fef2f2 !important; color: #b91c1c !important; border-color: #b91c1c !important; }}
+    .back-row {{ display: none !important; }}
+    .footer {{ color: #666 !important; font-size: 8pt; text-align: center; padding: 16px 0; }}
+    .stats-grid {{ gap: 8px; }}
+  }}
 </style>
 </head>
 <body>
@@ -484,21 +488,6 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
     <div class="meta-row">
       <span class="meta-item"><strong>Target:</strong> {target_name}</span>
       <span class="meta-item"><strong>Generator:</strong> Yours Truly{'' if not provider_name else f' via {provider_name}'}</span>
-    </div>
-  </div>
-
-  <div class="terminal-panel">
-    <div class="terminal-dots">
-      <div class="terminal-dot red"></div>
-      <div class="terminal-dot yellow"></div>
-      <div class="terminal-dot green"></div>
-    </div>
-    <div class="terminal-body">
-      <p class="terminal-prompt">$ zeroflaw scan {target_name[:40]}</p>
-      {scan_status_lines}
-      <p class="summary-line" style="color:#22d4ee;">
-        {critical} critical · {high} high · {medium} medium · {low} low — <strong>{'Blocking' if critical > 0 or high > 0 else 'All clear'}</strong>
-      </p>
     </div>
   </div>
 
@@ -530,43 +519,123 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
     Report auto-generated by ZeroFlaw Security Scanner
   </div>
 </div>
-<script>
-// Terminal animation: replay scan events
-(function(){{
-  var events = window.__SCAN_EVENTS__ || [];
-  var terminal = document.querySelector('.terminal-body');
-  if (!terminal || !events.length) return;
-  // Clear static lines
-  terminal.innerHTML = '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan preparing...</p>';
-  var idx = 0;
-  function playNext() {{
-    if (idx >= events.length) return;
-    var ev = events[idx++];
-    var p = document.createElement('p');
-    p.className = 'terminal-line';
-    if (ev.type === 'prompt') {{
-      p.innerHTML = '<span style="color:#64748b">' + ev.text.replace(/ /g, '&nbsp;') + '</span>';
-      p.style.animationDelay = '0s';
-    }} else if (ev.type === 'running') {{
-      p.innerHTML = '<span class="status-dot" style="background:#22d4ee;box-shadow:0 0 8px rgba(34,211,238,0.5);animation:pulse 0.8s infinite"></span> ' + ev.text;
-    }} else if (ev.type === 'ok') {{
-      p.innerHTML = '<span class="status-dot" style="background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,0.5)"></span> <span style="color:#22c55e">' + ev.text + '</span>';
-    }} else if (ev.type === 'warn') {{
-      p.innerHTML = '<span class="status-dot" style="background:#eab308;box-shadow:0 0 8px rgba(234,179,8,0.5)"></span> <span style="color:#eab308">' + ev.text + '</span>';
-    }} else if (ev.type === 'error') {{
-      p.innerHTML = '<span class="status-dot" style="background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,0.5)"></span> <span style="color:#ef4444">' + ev.text + '</span>';
-    }}
-    terminal.appendChild(p);
-    terminal.scrollTop = terminal.scrollHeight;
-    var delay = ev.type === 'running' ? 200 : (ev.type === 'prompt' ? 100 : 400);
-    setTimeout(playNext, delay);
-  }}
-  playNext();
-}})();
-</script>
 </body>
 </html>"""
     return report
+
+
+def generate_pdf_report(target_name: str, results: dict, ai_summary: str = "", provider_name: str = "") -> bytes:
+    """Generate a clean document-style PDF report (not a web-page conversion)."""
+    from datetime import datetime
+    scans = results.get("scans", {})
+    sev_map = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    findings_rows = ""
+
+    for scan_name, data in scans.items():
+        if isinstance(data, dict) and data.get("error"):
+            continue
+        for r in data.get("results", []):
+            sev = (r.get("issue_severity") or "LOW").upper()
+            if sev in sev_map:
+                sev_map[sev] += 1
+            findings_rows += f"""<tr>
+              <td class="sev-{sev.lower()}">{sev}</td>
+              <td>{scan_name}</td>
+              <td style="font-size:9pt">{r.get('filename', '')}:{r.get('line_number', '')}</td>
+              <td style="font-size:9pt">{r.get('issue_text', '')[:120]}</td>
+            </tr>"""
+
+    total = sum(sev_map.values())
+    critical, high, medium, low = sev_map["CRITICAL"], sev_map["HIGH"], sev_map["MEDIUM"], sev_map["LOW"]
+
+    risk_level = "Low Risk"
+    if critical > 0: risk_level = "CRITICAL RISK"
+    elif high > 0: risk_level = "HIGH RISK"
+    elif medium > 2: risk_level = "MEDIUM RISK"
+
+    # Trivy rows
+    trivy_rows = ""
+    trivy_data = scans.get("trivy", {})
+    if isinstance(trivy_data, dict) and "Results" in trivy_data:
+        for r in trivy_data["Results"]:
+            for v in r.get("Vulnerabilities", [])[:30]:
+                sev = v.get("Severity", "UNKNOWN")
+                trivy_rows += f"""<tr>
+                  <td class="sev-{sev.lower()}">{sev}</td>
+                  <td>{v.get('VulnerabilityID', '')}</td>
+                  <td>{v.get('PkgName', '')}</td>
+                  <td style="font-size:9pt">{v.get('Title', '')[:80]}</td>
+                </tr>"""
+
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  @page {{ margin: 2cm 2.2cm; size: A4; }}
+  @page {{ @bottom-center {{ content: "Page " counter(page); font-size: 8pt; color: #888; font-family: Georgia, 'Times New Roman', serif; }} }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: Georgia, 'Times New Roman', serif; font-size: 10pt; color: #222; line-height: 1.5; }}
+  h1 {{ font-size: 18pt; color: #000; margin-bottom: 2pt; letter-spacing: 0.5pt; }}
+  .subtitle {{ font-size: 10pt; color: #555; margin-bottom: 12pt; }}
+  .meta {{ font-size: 9pt; color: #666; margin-bottom: 18pt; border-bottom: 1.5pt solid #222; padding-bottom: 10pt; }}
+  .risk-badge {{ display: inline-block; padding: 4pt 14pt; font-size: 11pt; font-weight: bold; letter-spacing: 1pt; margin-bottom: 16pt; }}
+  .risk-critical {{ background: #b91c1c; color: #fff; }}
+  .risk-high {{ background: #b45309; color: #fff; }}
+  .risk-medium {{ background: #a16207; color: #fff; }}
+  .risk-low {{ background: #15803d; color: #fff; }}
+  .summary-grid {{ display: flex; gap: 16pt; margin-bottom: 18pt; }}
+  .summary-item {{ text-align: center; }}
+  .summary-item .num {{ font-size: 16pt; font-weight: bold; }}
+  .summary-item .label {{ font-size: 8pt; color: #666; text-transform: uppercase; letter-spacing: 1pt; }}
+  .num-critical {{ color: #b91c1c; }} .num-high {{ color: #b45309; }} .num-medium {{ color: #a16207; }} .num-low {{ color: #15803d; }}
+  h2 {{ font-size: 12pt; color: #000; margin: 16pt 0 8pt 0; border-bottom: 0.5pt solid #ccc; padding-bottom: 4pt; }}
+  table {{ width: 100%; border-collapse: collapse; margin-bottom: 14pt; font-size: 9pt; }}
+  th {{ background: #333; color: #fff; text-align: left; padding: 5pt 6pt; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5pt; }}
+  td {{ padding: 4pt 6pt; border-bottom: 0.5pt solid #ddd; vertical-align: top; }}
+  tr:nth-child(even) td {{ background: #f8f9fa; }}
+  .sev-critical {{ color: #b91c1c; font-weight: bold; }}
+  .sev-high {{ color: #b45309; font-weight: bold; }}
+  .sev-medium {{ color: #a16207; font-weight: bold; }}
+  .sev-low {{ color: #15803d; }}
+  .ai-box {{ border: 0.5pt solid #bbb; padding: 10pt 12pt; margin-bottom: 14pt; font-size: 9.5pt; }}
+  .ai-box p {{ margin: 4pt 0; }}
+  .ai-box ul {{ margin: 4pt 0 4pt 16pt; }}
+  .ai-box li {{ margin: 2pt 0; }}
+  .ai-box code {{ font-family: 'Courier New', monospace; font-size: 8.5pt; background: #f0f0f0; padding: 1pt 3pt; }}
+  .footer {{ margin-top: 18pt; padding-top: 8pt; border-top: 0.5pt solid #ccc; font-size: 8pt; color: #888; text-align: center; }}
+</style></head><body>
+<h1>ZeroFlaw Security Report</h1>
+<div class="subtitle">Automated security analysis for {target_name}</div>
+<div class="meta">Target: {target_name} &nbsp;|&nbsp; Generated: {date_str} &nbsp;|&nbsp; Scanner: ZeroFlaw{'' if not provider_name else f' / {provider_name}'}</div>
+
+<div class="risk-badge risk-{risk_level.split()[0].lower()}">{risk_level}</div>
+
+<h2>Findings Summary</h2>
+<div class="summary-grid">
+  <div class="summary-item"><div class="num num-critical">{critical}</div><div class="label">Critical</div></div>
+  <div class="summary-item"><div class="num num-high">{high}</div><div class="label">High</div></div>
+  <div class="summary-item"><div class="num num-medium">{medium}</div><div class="label">Medium</div></div>
+  <div class="summary-item"><div class="num num-low">{low}</div><div class="label">Low</div></div>
+</div>
+
+{f'<h2>AI Analysis</h2><div class="ai-box">{ai_summary}</div>' if ai_summary else ''}
+
+<h2>Findings ({total})</h2>
+<table>
+  <tr><th>Severity</th><th>Scanner</th><th>Location</th><th>Description</th></tr>
+  {findings_rows if findings_rows else '<tr><td colspan="4" style="color:#15803d;text-align:center;padding:12pt">No issues found.</td></tr>'}
+</table>
+
+{f'<h2>Dependency Vulnerabilities</h2><table><tr><th>Severity</th><th>ID</th><th>Package</th><th>Description</th></tr>{trivy_rows}</table>' if trivy_rows else ''}
+
+<div class="footer">Report auto-generated by ZeroFlaw Security Scanner on {date_str}</div>
+</body></html>"""
+    try:
+        return WeasyHTML(string=html).write_pdf()
+    except Exception as e:
+        print(f"PDF generation failed: {e}", file=sys.stderr)
+        return b""
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -578,7 +647,7 @@ def run_trivy_safe(path: str) -> dict:
         return {"error": "Trivy not installed"}
     try:
         result = subprocess.run(
-            [trivy, "fs", "--format", "json", "--quiet", path],
+            [trivy, "fs", "--format", "json", "--quiet", "--", path],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode not in (0, 1):
@@ -715,6 +784,25 @@ async def scan_project_stream(project_path: str, target_name: str):
     secret_count = len(secret_findings)
     results["scans"]["secrets"] = {"results": secret_findings, "count": secret_count}
     yield f"data: {json.dumps({'type':'warn' if secret_count > 0 else 'ok','text':f'🔑 Secrets — {secret_count} potential secret(s) found'})}\n\n"
+    
+    # Additional security tools
+    # CodeQL scan
+    yield f"data: {json.dumps({'type':'running','text':'🔬 CodeQL Scan...'})}\n\n"
+    await asyncio.sleep(0.1)
+    from server import run_codeql_scan
+    codeql_result = run_codeql_scan(project_path)
+    codeql_count = len(codeql_result.get("results", []))
+    yield f"data: {json.dumps({'type':'warn' if codeql_count > 0 else 'ok','text':f'🔬 CodeQL — {codeql_count} issue(s)'})}\n\n"
+    results["scans"]["codeql"] = codeql_result
+    
+    # OWASP ZAP scan
+    yield f"data: {json.dumps({'type':'running','text':'🕷️ OWASP ZAP Scan...'})}\n\n"
+    await asyncio.sleep(0.1)
+    from server import run_owasp_zap_scan
+    zap_result = run_owasp_zap_scan(project_path)
+    zap_count = len(zap_result.get("results", []))
+    yield f"data: {json.dumps({'type':'warn' if zap_count > 0 else 'ok','text':f'🕷️ OWASP ZAP — {zap_count} issue(s)'})}\n\n"
+    results["scans"]["zap"] = zap_result
 
     # Tally
     total = 0
@@ -730,7 +818,7 @@ async def scan_project_stream(project_path: str, target_name: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.post("/scan/upload", response_class=HTMLResponse)
@@ -778,36 +866,33 @@ async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), pro
         return HTMLResponse("<h2>Scan failed</h2>", status_code=500)
 
     ai_summary = ""
-    report_id = None
     provider_name = ""
     ai_summary, provider_name = await generate_ai_report_summary(api_key, target_name, results, provider)
-    if ai_summary:
-        report_id = str(uuid.uuid4())[:8]
 
+    report_id = str(uuid.uuid4())[:8]
     report = generate_html_report(target_name, results, ai_summary, provider_name)
 
-    if report_id:
-        # Save download version without the back button
-        download_report = report.replace(
-            '<div class="back-row">',
-            '<div class="back-row" style="display:none">',
-            1
-        )
-        report_path = REPORTS_DIR / f"{report_id}.html"
-        report_path.write_text(download_report, encoding="utf-8")
+    # Save download version (without back button → covers html + pdf)
+    download_report = report.replace(
+        '<div class="back-row">',
+        '<div class="back-row" style="display:none">',
+        1
+    )
+    report_path = REPORTS_DIR / f"{report_id}.html"
+    report_path.write_text(download_report, encoding="utf-8")
 
-        # Live version gets download button
-        full_report = report.replace(
-            '<div class="meta-row">',
-            f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download Report</a>',
-            1
-        )
-        report = full_report
+    pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
+    if pdf_bytes:
+        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
+        pdf_path.write_bytes(pdf_bytes)
 
-    # Embed scan events into the report page
-    scan_events_json = json.dumps([json.loads(e[6:].strip()) for e in events if e.startswith("data: ") and json.loads(e[6:].strip()).get("type") != "done"])
-    events_script = f"<script>window.__SCAN_EVENTS__={scan_events_json};</script>"
-    report = report.replace("</head>", f"{events_script}</head>")
+    # Live version gets download buttons
+    full_report = report.replace(
+        '<div class="meta-row">',
+        f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download HTML</a><a href="/download/{report_id}?format=pdf" class="download-btn" download>📄 Download PDF</a>',
+        1
+    )
+    report = full_report
 
     return HTMLResponse(content=report)
 
@@ -831,8 +916,9 @@ async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider:
     clone_to = os.path.join(tmpdir, "repo")
 
     try:
+        git_path = shutil.which("git") or "git"
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", repo_url, clone_to],
+            [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
@@ -863,35 +949,32 @@ async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider:
         return HTMLResponse("<h2>Scan failed</h2>", status_code=500)
 
     ai_summary = ""
-    report_id = None
     provider_name = ""
     ai_summary, provider_name = await generate_ai_report_summary(api_key, repo_name, results, provider)
-    if ai_summary:
-        report_id = str(uuid.uuid4())[:8]
 
+    report_id = str(uuid.uuid4())[:8]
     report = generate_html_report(repo_name, results, ai_summary, provider_name)
 
-    if report_id:
-        # Save download version without the back button
-        download_report = report.replace(
-            '<div class="back-row">',
-            '<div class="back-row" style="display:none">',
-            1
-        )
-        report_path = REPORTS_DIR / f"{report_id}.html"
-        report_path.write_text(download_report, encoding="utf-8")
+    # Save download version (without back button → covers html + pdf)
+    download_report = report.replace(
+        '<div class="back-row">',
+        '<div class="back-row" style="display:none">',
+        1
+    )
+    report_path = REPORTS_DIR / f"{report_id}.html"
+    report_path.write_text(download_report, encoding="utf-8")
 
-        full_report = report.replace(
-            '<div class="meta-row">',
-            f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download Report</a>',
-            1
-        )
-        report = full_report
+    pdf_bytes = generate_pdf_report(repo_name, results, ai_summary, provider_name)
+    if pdf_bytes:
+        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
+        pdf_path.write_bytes(pdf_bytes)
 
-    # Embed scan events into report page
-    scan_events_json = json.dumps([json.loads(e[6:].strip()) for e in events if e.startswith("data: ") and json.loads(e[6:].strip()).get("type") != "done"])
-    events_script = f"<script>window.__SCAN_EVENTS__={scan_events_json};</script>"
-    report = report.replace("</head>", f"{events_script}</head>")
+    full_report = report.replace(
+        '<div class="meta-row">',
+        f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download HTML</a><a href="/download/{report_id}?format=pdf" class="download-btn" download>📄 Download PDF</a>',
+        1
+    )
+    report = full_report
 
     return HTMLResponse(content=report)
 
@@ -999,8 +1082,13 @@ app.mount("/mcp", _mcp_app)
 
 
 @app.get("/download/{report_id}")
-async def download_report(report_id: str):
-    """Serve a saved HTML report for download."""
+async def download_report(report_id: str, format: str = "html"):
+    """Serve a saved report for download. Supports html and pdf formats."""
+    if format == "pdf":
+        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
+        if pdf_path.exists():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(pdf_path), media_type="application/pdf", filename=f"zeroflaw-report-{report_id}.pdf")
     report_path = REPORTS_DIR / f"{report_id}.html"
     if not report_path.exists():
         return HTMLResponse("<h2>Report not found</h2>", status_code=404)
@@ -1025,4 +1113,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8555))
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
+    uvicorn.run("app:app", host=os.environ.get("HOST", "0.0.0.0"), port=port)

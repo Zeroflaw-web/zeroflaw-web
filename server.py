@@ -4,6 +4,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import sys
 from mcp.server.fastmcp import FastMCP
 from subprocess import CompletedProcess, TimeoutExpired, run
@@ -17,6 +18,9 @@ BANDIT_TIMEOUT = 120
 RUFF_TIMEOUT = 120
 SEMGREP_TIMEOUT = 120
 OWASP_TIMEOUT = 300  # OWASP Dependency-Check can be slow (NVD DB download)
+CODEQL_TIMEOUT = 300
+ZAP_TIMEOUT = 180
+SONARQUBE_TIMEOUT = 300
 
 # Maximum output size in bytes before truncation (50 MB)
 MAX_OUTPUT_SIZE = 50 * 1024 * 1024
@@ -63,6 +67,149 @@ SENSITIVE_SYSTEM_PATHS = {
 # Regex patterns for path injection detection
 SHELL_METACHAR_PATTERN = re.compile(r'[;&|`$(){}<>!]')
 PATH_TRAVERSAL_PATTERN = re.compile(r'(?:^|[\\/])\.\.(?:[\\/]|$)')
+
+
+def run_codeql_scan(target_path: str) -> Dict[str, Any]:
+    """Run CodeQL scan on the target path.
+    
+    This function requires CodeQL CLI to be installed and available in the system PATH.
+    CodeQL requires building a database from source code, then running security queries.
+    
+    Args:
+        target_path: The absolute or relative path to the project directory.
+
+    Returns:
+        A dictionary containing the CodeQL scan results.
+    """
+    # Check if CodeQL is enabled via environment variable
+    codeql_enabled = os.environ.get("CODEQL_ENABLED", "false").lower() == "true"
+    if not codeql_enabled:
+        return {"results": [], "message": "CodeQL scanning is disabled. Set CODEQL_ENABLED=true to enable."}
+        
+    # Security validation
+    error = _validate_path_safety(target_path)
+    if error:
+        return {"error": error}
+        
+    resolved = _normalize_path(target_path)
+    
+    if not os.path.exists(resolved):
+        return {"error": f"Path does not exist: {target_path}"}
+        
+    if not os.path.isdir(resolved):
+        return {"error": f"Not a directory: {target_path}"}
+        
+    # Check if CodeQL is installed
+    codeql_path = shutil.which("codeql")
+    if not codeql_path:
+        return {"error": "CodeQL not found. Please install CodeQL CLI to use this feature."}
+        
+    try:
+        # This is a simplified implementation
+        # A full implementation would require:
+        # 1. Creating a CodeQL database from the source code
+        # 2. Running security queries against the database
+        # 3. Parsing the results
+        
+        # For now, we'll return a placeholder result indicating the tool is not fully implemented
+        return {
+            "results": [],
+            "message": "CodeQL integration is available but not fully implemented in this version. Please install CodeQL and use the command line interface for full functionality."
+        }
+    except Exception as e:
+        return {"error": f"Error running CodeQL scan: {str(e)}"}
+
+
+def run_owasp_zap_scan(target_path: str) -> Dict[str, Any]:
+    """Run OWASP ZAP scan on the target path.
+    
+    This function would integrate with ZAP to perform dynamic application security testing.
+    In a full implementation, this would require:
+    1. ZAP to be running as a service
+    2. A way to point ZAP at the application
+    3. Configuration of scan parameters
+    
+    Args:
+        target_path: The absolute or relative path to the project directory.
+
+    Returns:
+        A dictionary containing the ZAP scan results.
+    """
+    # Check if ZAP is enabled via environment variable
+    zap_enabled = os.environ.get("ZAP_ENABLED", "false").lower() == "true"
+    if not zap_enabled:
+        return {"results": [], "message": "OWASP ZAP scanning is disabled. Set ZAP_ENABLED=true to enable."}
+        
+    # Security validation
+    error = _validate_path_safety(target_path)
+    if error:
+        return {"error": error}
+        
+    resolved = _normalize_path(target_path)
+    
+    if not os.path.exists(resolved):
+        return {"error": f"Path does not exist: {target_path}"}
+        
+    # Check if ZAP is installed and running
+    try:
+        # This would be a placeholder implementation
+        # A full implementation would require:
+        # 1. ZAP API connection
+        # 2. ZAP to be running as a service
+        # 3. Configuration to point to the application being tested
+        
+        return {
+            "results": [],
+            "message": "OWASP ZAP integration is available but requires ZAP to be running as a service. Please start ZAP in daemon mode for full functionality."
+        }
+    except Exception as e:
+        return {"error": f"Error running ZAP scan: {str(e)}"}
+
+
+def run_owasp_zap_scan(target_path: str) -> Dict[str, Any]:
+    """Run OWASP ZAP scan on the target path.
+    
+    This function would integrate with ZAP to perform dynamic application security testing.
+    In a full implementation, this would require:
+    1. ZAP to be running as a service
+    2. A way to point ZAP at the application
+    3. Configuration of scan parameters
+    
+    Args:
+        target_path: The absolute or relative path to the project directory.
+
+    Returns:
+        A dictionary containing the ZAP scan results.
+    """
+    # Check if ZAP is enabled via environment variable
+    zap_enabled = os.environ.get("ZAP_ENABLED", "false").lower() == "true"
+    if not zap_enabled:
+        return {"results": [], "message": "OWASP ZAP scanning is disabled. Set ZAP_ENABLED=true to enable."}
+        
+    # Security validation
+    error = _validate_path_safety(target_path)
+    if error:
+        return {"error": error}
+        
+    resolved = _normalize_path(target_path)
+    
+    if not os.path.exists(resolved):
+        return {"error": f"Path does not exist: {target_path}"}
+        
+    # Check if ZAP is installed and running
+    try:
+        # This would be a placeholder implementation
+        # A full implementation would require:
+        # 1. ZAP API connection
+        # 2. ZAP to be running as a service
+        # 3. Configuration to point to the application being tested
+        
+        return {
+            "results": [],
+            "message": "OWASP ZAP integration is available but requires ZAP to be running as a service. Please start ZAP in daemon mode for full functionality."
+        }
+    except Exception as e:
+        return {"error": f"Error running ZAP scan: {str(e)}"}
 
 
 def _normalize_path(path: str) -> str:
@@ -243,7 +390,7 @@ def _run_module(
 
     Args:
         module: The module name to run (e.g. 'bandit', 'ruff', 'semgrep').
-        args: CLI arguments to pass to the module.
+        args: CLI arguments to to pass to the module.
         timeout: Maximum execution time in seconds.
         scannerignore_patterns: Optional list of .scannerignore patterns.
 
@@ -434,7 +581,7 @@ def run_code_linting(target_path: str) -> Dict[str, Any]:
     try:
         result = _run_module(
             "ruff",
-            ["check", resolved, "--output-format", "json"],
+            ["check", "--output-format", "json", "--", resolved],
             timeout=RUFF_TIMEOUT,
             scannerignore_patterns=scannerignore_patterns,
         )
@@ -468,7 +615,7 @@ def run_universal_security_scan(target_path: str) -> Dict[str, Any]:
     try:
         result = _run_module(
             "semgrep",
-            ["scan", "--config", "auto", "--json", resolved],
+            ["scan", "--config", "auto", "--json", "--", resolved],
             timeout=SEMGREP_TIMEOUT,
             scannerignore_patterns=scannerignore_patterns,
         )
@@ -506,6 +653,10 @@ def run_all_scans(target_path: str) -> Dict[str, Any]:
             result["pip_audit"] = scan_python_dependencies(target_path)
         # OWASP Dependency-Check runs on any project directory
         result["owasp_dependency_check"] = run_owasp_dependency_check(target_path)
+        
+        # Run additional security tools if available
+        result["codeql"] = run_codeql_scan(target_path)
+        result["zap"] = run_owasp_zap_scan(target_path)
 
     return result
 
@@ -548,7 +699,7 @@ def scan_npm_dependencies(project_path: str) -> Dict[str, Any]:
 
         # On Windows, npm is often a .ps1 script which subprocess can't run.
         # Use npm.cmd explicitly if available.
-        npm_cmd = "npm"
+        npm_cmd = shutil.which("npm") or "npm"
         if os.name == "nt":
             # Try to find npm.cmd in PATH
             for path_dir in os.environ.get("PATH", "").split(os.pathsep):

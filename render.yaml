@@ -10,3 +10,9 @@ services:
     envVars:
       - key: PORT
         value: 8555
+      - key: CODEQL_ENABLED
+        value: "true"
+      - key: ZAP_ENABLED
+        value: "true"
+      - key: DEEPSEEK_API_KEY
+        sync: false

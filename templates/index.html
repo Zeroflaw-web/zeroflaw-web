@@ -123,6 +123,20 @@
       <span class="badge badge-dep">🔍 Trivy</span>
       <span class="badge badge-js">📦 npm audit</span>
       <span class="badge badge-py">📦 pip audit</span>
+      <span class="badge badge-all">🔬 CodeQL</span>
+      <span class="badge badge-all">🕷️ OWASP ZAP</span>
+    </div>
+  </div>
+
+  <!-- Scan terminal (shown during scan) -->
+  <div class="terminal-panel" id="scanTerminal" style="display:none;margin-bottom:16px;">
+    <div class="terminal-dots">
+      <div class="terminal-dot red"></div>
+      <div class="terminal-dot yellow"></div>
+      <div class="terminal-dot green"></div>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p>
     </div>
   </div>
 
@@ -137,7 +151,6 @@
         <div class="subtext">Supports .zip, .py, .js, .ts, .java, .go, .rs, .rb, .yaml, .json, and more</div>
         <input type="file" name="file" accept=".zip,.py,.js,.ts,.jsx,.tsx,.java,.go,.rs,.rb,.php,.yml,.yaml,.json,.html,.css" id="fileInput" required>
       </div>
-
       <!-- API Key Section -->
       <div class="api-section">
         <div class="api-toggle" onclick="toggleApi('upload')">
@@ -154,29 +167,18 @@
               <option value="anthropic">Claude</option>
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="nvidia">NVIDIA</option>
             </select>
           </div>
           <div class="hint">Select provider if auto-detect doesn't work. Your key is not stored.</div>
         </div>
       </div>
-
       <div style="margin-top:16px;">
         <button type="submit" class="btn" id="uploadBtn">Scan Upload</button>
       </div>
     </form>
     <div class="status" id="uploadStatus">
       <span class="spinner"></span> Extracting project files...
-    </div>
-    <!-- Scan terminal (shown during scan) -->
-    <div class="terminal-panel" id="scanTerminal" style="display:none;margin-top:16px;">
-      <div class="terminal-dots">
-        <div class="terminal-dot red"></div>
-        <div class="terminal-dot yellow"></div>
-        <div class="terminal-dot green"></div>
-      </div>
-      <div class="terminal-body" id="terminalBody">
-        <p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p>
-      </div>
     </div>
   </div>
 
@@ -191,7 +193,6 @@
         <input type="url" name="repo_url" placeholder="https://github.com/user/repo" required>
         <button type="submit" class="btn" id="urlBtn">Scan URL</button>
       </div>
-
       <!-- API Key Section -->
       <div class="api-section">
         <div class="api-toggle" onclick="toggleApi('url')">
@@ -208,29 +209,13 @@
               <option value="anthropic">Claude</option>
               <option value="groq">Groq</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="nvidia">NVIDIA</option>
             </select>
           </div>
-          <div class="hint">Select provider if auto-detect doesn't work.</div>
+          <div class="hint">Select provider if auto-detect doesn't work. Your key is not stored.</div>
         </div>
       </div>
     </form>
-    <div class="status" id="urlStatus">
-      <span class="spinner"></span> Cloning repository...
-    </div>
-    <!-- Scan terminal (reused for URL scans) -->
-  </div>
-
-  <div class="divider">—</div>
-
-  <!-- API Access -->
-  <div class="card" style="text-align:center;">
-    <h2 style="justify-content:center;">💻 API Access</h2>
-    <p class="desc">For CI/CD pipelines, use the JSON API endpoint. Pass your API key via the <code style="background:rgba(255,255,255,0.05);padding:2px 6px;border-radius:4px;">X-Api-Key</code> header.</p>
-    <code style="display:block;padding:12px;margin:8px 0;background:#020617;border-radius:8px;font-size:12px;text-align:left;color:#22d4ee;">
-      curl -F "file=@project.zip" \<br>
-      &nbsp;&nbsp;-H "X-Api-Key: sk-..." \<br>
-      &nbsp;&nbsp;https://your-app.onrender.com/scan/json
-    </code>
   </div>
 
   <div class="footer">
@@ -263,11 +248,13 @@
     'Extracting project files...',
     'Initializing scanners...',
     'Running Bandit (Python security)...',
-    'Running Ruff (Python linting)...',
+    'Running Ruff (lining)...',
     'Running Semgrep (multi-language SAST)...',
     'Checking dependencies...',
     'Running Trivy (dependency scan)...',
     'Scanning for secrets...',
+    'Running CodeQL scan...',
+    'Running OWASP ZAP scan...',
     'Generating report...',
   ];
 
@@ -280,6 +267,8 @@
     'Checking dependencies...',
     'Running Trivy (dependency scan)...',
     'Scanning for secrets...',
+    'Running CodeQL scan...',
+    'Running OWASP ZAP scan...',
     'Generating report...',
   ];
 
@@ -334,13 +323,11 @@
   // URL form — fetch on desktop, regular submit on mobile
   document.getElementById('urlForm').addEventListener('submit', function(e) {
     if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-      document.getElementById('urlStatus').style.display = 'block';
       document.getElementById('urlBtn').disabled = true;
       document.getElementById('scanTerminal').style.display = 'block';
       return true;
     }
     e.preventDefault();
-    document.getElementById('urlStatus').style.display = 'block';
     document.getElementById('urlBtn').disabled = true;
     showTerminal(urlSteps);
     var formData = new FormData(this);

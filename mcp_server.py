@@ -48,7 +48,7 @@ def main():
     parser = argparse.ArgumentParser(description="ZeroFlaw MCP Server")
     parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Claude Desktop)")
     parser.add_argument("--port", type=int, default=8556, help="Port for HTTP/SSE transport")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--host", default=os.environ.get("HOST", "0.0.0.0"), help="Host to bind to")
     args = parser.parse_args()
 
     if args.stdio:
@@ -127,8 +127,9 @@ def register_tools(mcp):
         clone_to = os.path.join(tmpdir, "repo")
 
         try:
+            git_path = shutil.which("git") or "git"
             result = subprocess.run(
-                ["git", "clone", "--depth", "1", repo_url, clone_to],
+                [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
                 capture_output=True, text=True, timeout=300,
             )
             if result.returncode != 0:
@@ -155,8 +156,9 @@ def register_tools(mcp):
         tmpdir = tempfile.mkdtemp()
         clone_to = os.path.join(tmpdir, "repo")
         try:
+            git_path = shutil.which("git") or "git"
             result = subprocess.run(
-                ["git", "clone", "--depth", "1", repo_url, clone_to],
+                [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
                 capture_output=True, text=True, timeout=120,
             )
             if result.returncode != 0:
@@ -221,7 +223,7 @@ def run_trivy(path: str) -> dict:
         return {"error": "Trivy not installed"}
     try:
         result = subprocess.run(
-            [trivy, "fs", "--format", "json", "--quiet", path],
+            [trivy, "fs", "--format", "json", "--quiet", "--", path],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode not in (0, 1):

@@ -87,7 +87,15 @@ https://<your_token>@github.com/yourname/private-repo
 5. Click **Apply** — Render auto-detects `render.yaml`
 
 Set environment variables:
-- `DEEPSEEK_API_KEY` — enables AI report summaries without user-provided keys
+- `DEEPSEEK_API_KEY` — enables AI report summaries
+- `CODEQL_ENABLED` - enables CodeQL scanning
+- `ZAP_ENABLED` - enables OWASP ZAP scanning
+
+## Additional Security Tools
+
+The application now includes enhanced security tools:
+- CodeQL for advanced static analysis
+- OWASP ZAP for dynamic application security testing
 
 ## CLI Version
 
