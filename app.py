@@ -899,7 +899,7 @@ async def _start_cleanup():
 
 async def _run_scan_background(
     scan_id: str, project_path: str, target_name: str,
-    api_key: str, provider: str, is_fix: bool = False,
+    api_key: str, provider: str,
 ):
     """Run scan in background and store results in scan_store.
     
@@ -927,68 +927,10 @@ async def _run_scan_background(
             api_key, target_name, results, provider
         )
 
-        changes = []
-        if is_fix:
-            fix_step = {"type": "running", "text": "🔧 Applying auto-fixes..."}
-            steps = scan_store[scan_id].get("steps", [])
-            steps.append(fix_step)
-            scan_store[scan_id]["steps"] = steps
-
-            changes = auto_fix.apply_fixes(project_path, results)
-
-            if changes:
-                for c in changes:
-                    fix_result = {"type": "fix", "text": f"Fixed {c['file']}:{c['line']} — {c['fix']}"}
-                    steps = scan_store[scan_id].get("steps", [])
-                    steps.append(fix_result)
-                    scan_store[scan_id]["steps"] = steps
-            else:
-                no_fix = {"type": "ok", "text": "🔧 No fixable issues found"}
-                steps = scan_store[scan_id].get("steps", [])
-                steps.append(no_fix)
-                scan_store[scan_id]["steps"] = steps
-
-            fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
-            auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
-
         report = generate_html_report(target_name, results, ai_summary, provider_name)
 
-        # Build fix summary
-        fix_summary = ""
-        if changes:
-            fix_html = ""
-            for c in changes:
-                fix_html += f"""<tr>
-                  <td style="color:#22d4ee;font-size:12px;">🔧</td>
-                  <td style="font-size:13px;">{c['file']}:{c['line']}</td>
-                  <td style="font-size:12px;color:#94a3b8;">{c['issue'][:80]}</td>
-                  <td style="font-size:12px;color:#3fb950;">{c['fix']}</td>
-                </tr>"""
-            fix_summary = f"""<div class="section" style="background:linear-gradient(135deg,#0F172A,#020617);border:1px solid rgba(34,211,238,0.15);border-radius:12px;padding:16px;margin:24px;">
-              <div style="color:#22d4ee;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling,a=this.querySelector('.collapse-arrow');b.classList.toggle('closed');a&&a.classList.toggle('closed');">
-                🛠 Auto-Fixes Applied ({len(changes)})
-                <span class="collapse-arrow" style="font-size:12px;transition:transform .2s;">▼</span>
-              </div>
-              <div class="collapsible-body" style="overflow:hidden;transition:max-height .3s;">
-                <table style="width:100%;border-collapse:collapse;margin-top:12px;">
-                  <tr><th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);"></th>
-                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Location</th>
-                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Issue</th>
-                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Fix</th></tr>
-                  {fix_html}
-                </table>
-                <div style="margin-top:12px;">
-                  <a href="/download/{scan_id}?format=zip" class="download-btn" download style="display:inline-block;padding:8px 20px;background:#22d4ee;color:#020617;border:none;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">⬇ Download Fixed Source</a>
-                </div>
-              </div>
-            </div>"""
-            report = report.replace('</div>\n</body>', f'{fix_summary}</div>\n</body>')
-
         # Add download buttons (must happen before creating download_report)
-        if is_fix:
-            download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/download/{scan_id}?format=zip" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);" download>\U0001f4e6 Download Fixed Source</a>'
-        else:
-            download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
+        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
         report = report.replace('<div class="meta-row">', download_btns, 1)
 
         # Save download version (no back button)
@@ -1005,9 +947,6 @@ async def _run_scan_background(
         if pdf_bytes:
             pdf_path = REPORTS_DIR / f"{scan_id}.pdf"
             pdf_path.write_bytes(pdf_bytes)
-
-        if is_fix:
-            await asyncio.sleep(1.5)
 
         scan_store[scan_id]["status"] = "done"
         scan_store[scan_id]["report_html"] = report
@@ -1252,92 +1191,6 @@ async def scan_json(file: UploadFile = File(...)):
             zf.extractall(extract_to)
         results = run_scans_sync(extract_to)
     return results
-
-
-# ── Fix endpoints ────────────────────────────────────────────────────
-
-@app.post("/fix/upload")
-async def fix_upload(file: UploadFile = File(...), api_key: str = Form(""), provider: str = Form("")):
-    """Upload, scan, auto-fix in background, redirect to progress."""
-    scan_id = str(uuid.uuid4())[:8]
-    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
-    os.makedirs(tmpdir, exist_ok=True)
-
-    target_name = file.filename or "upload"
-    is_zip = file.filename and file.filename.endswith(".zip")
-
-    if is_zip:
-        zip_path = os.path.join(tmpdir, "project.zip")
-        with open(zip_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        extract_to = os.path.join(tmpdir, "project")
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_to)
-    else:
-        extract_to = os.path.join(tmpdir, "project")
-        os.makedirs(extract_to)
-        file_path = os.path.join(extract_to, file.filename or "upload.txt")
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-
-    scan_store[scan_id] = {
-        "status": "scanning", "type": "upload",
-        "target": target_name, "created_at": time.time(),
-        "tmpdir": tmpdir,
-    }
-
-    asyncio.create_task(_run_scan_background(scan_id, extract_to, target_name, api_key, provider, is_fix=True))
-
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
-
-
-@app.post("/fix/url")
-async def fix_url(repo_url: str = Form(...), api_key: str = Form(""), provider: str = Form("")):
-    """Clone a URL, scan, auto-fix in background, redirect to progress."""
-    if not validate_repo_url(repo_url):
-        return error_page("Invalid repository URL", "<p>Only GitHub, GitLab, and Bitbucket HTTPS URLs are allowed.</p><a href='/'>← Try Again</a>", 400)
-    import urllib.parse
-    repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
-    if repo_name.endswith(".git"):
-        repo_name = repo_name[:-4]
-
-    scan_id = str(uuid.uuid4())[:8]
-    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
-    os.makedirs(tmpdir, exist_ok=True)
-    clone_to = os.path.join(tmpdir, "repo")
-
-    try:
-        git_path = shutil.which("git") or "git"
-        result = subprocess.run(
-            [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-            err = result.stderr[:300]
-            is_auth = "could not read Username" in err or "Authentication failed" in err or "403" in err
-            hint = ""
-            if is_auth:
-                hint = '<p style="color:#eab308;margin-top:12px;font-size:13px;">This looks like a <strong>private repository</strong>. Use a token in the URL:<br><code style="background:#020617;padding:4px 8px;border-radius:4px;color:#22d4ee;">https://&lt;token&gt;@github.com/user/repo</code></p>'
-            body = f"<pre style='background:#020617;padding:16px;border-radius:8px;color:#94a3b8;font-size:13px;overflow-x:auto;text-align:left;'>{err}</pre>{hint}<a href='/'>← Try Again</a>"
-            return error_page("Clone failed", body, 400)
-    except subprocess.TimeoutExpired:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        return error_page("Clone timed out", "<p>The repository clone operation exceeded the time limit.</p><a href='/'>← Try Again</a>", 400)
-
-    scan_store[scan_id] = {
-        "status": "scanning", "type": "url",
-        "target": repo_name, "created_at": time.time(),
-        "tmpdir": tmpdir,
-    }
-
-    asyncio.create_task(_run_scan_background(scan_id, clone_to, repo_name, api_key, provider, is_fix=True))
-
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
 
 
 @app.get("/fix/run/{scan_id}")

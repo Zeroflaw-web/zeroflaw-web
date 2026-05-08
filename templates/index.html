@@ -173,9 +173,8 @@
           <div class="hint">Select provider if auto-detect doesn't work. Your key is not stored.</div>
         </div>
       </div>
-      <div style="margin-top:16px;display:flex;gap:8px;">
+      <div style="margin-top:16px;">
         <button type="submit" class="btn" id="uploadBtn">Scan Upload</button>
-        <button type="submit" class="btn" id="uploadFixBtn" formaction="/fix/upload" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">🔧 Fix &amp; Scan</button>
       </div>
     </form>
     <div class="status" id="uploadStatus">
@@ -193,7 +192,6 @@
       <div class="input-group">
         <input type="url" name="repo_url" placeholder="https://github.com/user/repo" required>
         <button type="submit" class="btn" id="urlBtn">Scan URL</button>
-        <button type="submit" class="btn" formaction="/fix/url" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">🔧 Fix &amp; Scan</button>
       </div>
       <!-- API Key Section -->
       <div class="api-section">
@@ -246,31 +244,15 @@
   }
 
   // Form submission — show terminal, then let browser submit natively
-  document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    var btn = e.submitter;
-    var isFix = btn && btn.getAttribute('formaction') !== null;
+  function showScanning(form) {
     document.getElementById('scanTerminal').style.display = 'block';
     document.getElementById('terminalBody').innerHTML =
-      '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan ' + (isFix ? '--fix' : '') +
-      '</p><p class="terminal-line"><span class="dot busy"></span> ' +
-      (isFix ? 'Fixing and scanning' : 'Scanning') +
-      ' in progress... This may take a minute.</p>';
-    var buttons = this.querySelectorAll('button[type="submit"]');
+      '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p><p class="terminal-line"><span class="dot busy"></span> Scanning in progress... This may take a minute.</p>';
+    var buttons = form.querySelectorAll('button[type="submit"]');
     for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-  });
-
-  document.getElementById('urlForm').addEventListener('submit', function(e) {
-    var btn = e.submitter;
-    var isFix = btn && btn.getAttribute('formaction') !== null;
-    document.getElementById('scanTerminal').style.display = 'block';
-    document.getElementById('terminalBody').innerHTML =
-      '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan ' + (isFix ? '--fix' : '') +
-      '</p><p class="terminal-line"><span class="dot busy"></span> ' +
-      (isFix ? 'Fixing and scanning' : 'Scanning') +
-      ' in progress... This may take a minute.</p>';
-    var buttons = this.querySelectorAll('button[type="submit"]');
-    for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
-  });
+  }
+  document.getElementById('uploadForm').addEventListener('submit', function(e) { showScanning(this); });
+  document.getElementById('urlForm').addEventListener('submit', function(e) { showScanning(this); });
 </script>
 </body>
 </html>
