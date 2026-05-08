@@ -985,7 +985,10 @@ async def _run_scan_background(
             report = report.replace('</div>\n</body>', f'{fix_summary}</div>\n</body>')
 
         # Add download buttons (must happen before creating download_report)
-        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
+        if is_fix:
+            download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/download/{scan_id}?format=zip" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);" download>\U0001f4e6 Download Fixed Source</a>'
+        else:
+            download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
         report = report.replace('<div class="meta-row">', download_btns, 1)
 
         # Save download version (no back button)
