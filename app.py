@@ -30,6 +30,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 # ── Security middleware ───────────────────────────────────────────────
 
+import auto_fix
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -66,12 +68,33 @@ def mask_api_key(key: str) -> str:
         return "***"
     return key[:4] + "****" + key[-4:]
 
+
+def error_page(title: str, body: str = "", status_code: int = 400) -> HTMLResponse:
+    """Return a dark-themed error page."""
+    html = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>{title} — ZeroFlaw</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #020617; color: #e2e8f0; line-height: 1.6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
+  .card {{ background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; text-align: center; }}
+  h2 {{ color: #ff7b72; font-size: 20px; margin-bottom: 12px; }}
+  p {{ color: #94a3b8; font-size: 14px; margin-bottom: 16px; }}
+  a {{ display: inline-block; padding: 10px 24px; background: #22d4ee; color: #020617; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }}
+  a:hover {{ background: #1bb3cc; }}
+</style></head><body><div class="card"><h2>{title}</h2>{body}</div></body></html>"""
+    return HTMLResponse(content=html, status_code=status_code)
+
+
 # ── Paths ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 UPLOAD_DIR = BASE_DIR / "uploads"
 REPORTS_DIR = BASE_DIR / "reports"
 SCANNER_DIR = BASE_DIR
+
+TEMP_SCANS_DIR = BASE_DIR / "temp_scans"
+TEMP_SCANS_DIR.mkdir(exist_ok=True)
 
 sys.path.insert(0, str(SCANNER_DIR))
 
@@ -97,7 +120,7 @@ MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 async def limit_upload_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_UPLOAD_SIZE:
-        return HTMLResponse("<h2>Upload too large (max 50 MB)</h2>", status_code=413)
+        return error_page("Upload too large", "<p>Max upload size is 50 MB.</p><a href='/'>← Try Again</a>", 413)
     response = await call_next(request)
     return response
 
@@ -344,7 +367,18 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
             </div>
         </div>"""
     if not findings_html:
-        findings_html = '<div class="finding-row" style="justify-content:center;padding:32px;color:#3fb950;"><span style="font-size:24px;">✓</span> No issues found — your code is clean!</div>'
+        findings_html = '<div class="finding-row" style="justify-content:center;padding:32px;color:#3fb950;"><span style="font-size:24px;">\u2713</span> No issues found — your code is clean!</div>'
+
+    # Build collapsible findings section
+    onclick_toggle = "var b=this.nextElementSibling,a=this.querySelector('.collapse-arrow');b.classList.toggle('closed');a.classList.toggle('closed');"
+    findings_section = (
+        '<div class="section">'
+        '<div class="section-title" onclick="' + onclick_toggle + '">'
+        '\U0001f4cb Findings (' + str(total) + ')'
+        '<span class="collapse-arrow">\u25bc</span></div>'
+        '<div class="collapsible-body"><div class="findings-list">'
+        + findings_html + '</div></div></div>'
+    )
 
     # Trivy section
     trivy_rows_html = ""
@@ -358,10 +392,30 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
                     <div class="finding-sev {sev_class}">{sev}</div>
                     <div class="finding-body">
                         <div class="finding-meta"><strong>{v.get('VulnerabilityID','')}</strong> in <code>{v.get('PkgName','')}</code></div>
-                        <div class="finding-msg">{v.get('InstalledVersion','')} → <span class="fixed-version">{v.get('FixedVersion','unknown')}</span></div>
+                        <div class="finding-msg">{v.get('InstalledVersion','')} \u2192 <span class="fixed-version">{v.get('FixedVersion','unknown')}</span></div>
                         <div class="finding-msg" style="color:#8b949e;font-size:12px;">{v.get('Title','')[:120]}</div>
                     </div>
                 </div>"""
+
+    trivy_section = ""
+    if trivy_rows_html:
+        trivy_section = (
+            '<div class="section">'
+            '<div class="section-title" onclick="' + onclick_toggle + '">'
+            '\U0001f4e6 Dependency Vulnerabilities<span class="collapse-arrow">\u25bc</span></div>'
+            '<div class="collapsible-body"><div class="findings-list">'
+            + trivy_rows_html + '</div></div></div>'
+        )
+
+    ai_summary_section = ""
+    if ai_summary:
+        ai_summary_section = (
+            '<div class="section"><div class="section-title" onclick="'
+            + onclick_toggle + '">'
+            '\U0001f916 AI Analysis<span class="collapse-arrow">\u25bc</span></div>'
+            '<div class="collapsible-body"><div class="ai-section">'
+            + ai_summary + '</div></div></div>'
+        )
 
     risk_level = "low"
     risk_label = "Low Risk"
@@ -408,7 +462,12 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
   .risk-badge.medium {{ background: rgba(234,179,8,0.08); color: #d29922; border: 1px solid rgba(234,179,8,0.15); }}
   .risk-badge.low {{ background: rgba(34,197,94,0.1); color: #3fb950; border: 1px solid rgba(34,197,94,0.2); }}
   .section {{ margin: 24px; }}
-  .section-title {{ font-size: 16px; font-weight: 600; color: #22d4ee; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }}
+  .section-title {{ font-size: 16px; font-weight: 600; color: #22d4ee; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }}
+  .section-title:hover {{ opacity: 0.8; }}
+  .collapse-arrow {{ font-size: 12px; transition: transform 0.2s; }}
+  .collapse-arrow.closed {{ transform: rotate(-90deg); }}
+  .collapsible-body {{ overflow: hidden; transition: max-height 0.3s; }}
+  .collapsible-body.closed {{ max-height: 0 !important; }}
   .findings-list {{ display: flex; flex-direction: column; gap: 6px; }}
   .finding-row {{ display: flex; gap: 12px; padding: 12px 16px; background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; }}
   .finding-sev {{ flex-shrink: 0; width: 100px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding-top: 2px; }}
@@ -470,6 +529,8 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
     .verdict-caveats {{ background: #fffbeb !important; color: #b45309 !important; border-color: #b45309 !important; }}
     .verdict-review {{ background: #fef2f2 !important; color: #b91c1c !important; border-color: #b91c1c !important; }}
     .back-row {{ display: none !important; }}
+    .collapsible-body {{ max-height: none !important; }}
+    .collapse-arrow {{ display: none !important; }}
     .footer {{ color: #666 !important; font-size: 8pt; text-align: center; padding: 16px 0; }}
     .stats-grid {{ gap: 8px; }}
   }}
@@ -502,14 +563,11 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
     <div class="stat-card"><div class="num low">{low}</div><div class="label">Low</div></div>
   </div>
 
-  {('<div class="ai-section">' + ai_summary + '</div>') if ai_summary else ''}
+  {ai_summary_section}
 
-  <div class="section">
-    <div class="section-title">📋 Findings ({total})</div>
-    <div class="findings-list">{findings_html}</div>
-  </div>
+  {findings_section}
 
-  {('<div class="section"><div class="section-title">📦 Dependency Vulnerabilities</div><div class="findings-list">' + trivy_rows_html + '</div></div>') if trivy_rows_html else ''}
+  {trivy_section}
 
   <div class="back-row">
     <a href="/" class="back-btn">← Scan Another Project</a>
@@ -814,6 +872,128 @@ async def scan_project_stream(project_path: str, target_name: str):
     yield f"data: {json.dumps({'type':'done','results':results})}\n\n"
 
 
+# ── Background scan store ──────────────────────────────────────────
+# Avoids Render's 60s response timeout: POST returns immediately with
+# a redirect to a progress page; the scan runs in the background.
+
+import time
+scan_store: dict[str, dict] = {}
+SCAN_TTL = 3600  # clean scans older than 1h
+
+# Background cleanup of expired scans
+async def _cleanup_expired_scans():
+    while True:
+        await asyncio.sleep(600)
+        now = time.time()
+        expired = [k for k, v in scan_store.items() if now - v.get("created_at", 0) > SCAN_TTL]
+        for k in expired:
+            entry = scan_store.pop(k, None)
+            if entry and entry.get("tmpdir"):
+                shutil.rmtree(entry["tmpdir"], ignore_errors=True)
+
+
+@app.on_event("startup")
+async def _start_cleanup():
+    asyncio.create_task(_cleanup_expired_scans())
+
+
+async def _run_scan_background(
+    scan_id: str, project_path: str, target_name: str,
+    api_key: str, provider: str, is_fix: bool = False,
+):
+    """Run scan in background and store results in scan_store."""
+    try:
+        events = []
+        async for event in scan_project_stream(project_path, target_name):
+            events.append(event)
+
+        results = None
+        steps = []
+        for e in events:
+            if e.startswith("data: "):
+                data = json.loads(e[6:].strip())
+                steps.append(data)
+                scan_store[scan_id]["steps"] = steps
+                if data.get("type") == "done":
+                    results = data["results"]
+
+        if not results:
+            scan_store[scan_id]["status"] = "error"
+            scan_store[scan_id]["error"] = "Scan produced no results"
+            return
+
+        ai_summary, provider_name = await generate_ai_report_summary(
+            api_key, target_name, results, provider
+        )
+
+        changes = []
+        if is_fix:
+            changes = auto_fix.apply_fixes(project_path, results)
+            fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
+            auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
+
+        report = generate_html_report(target_name, results, ai_summary, provider_name)
+
+        # Build fix summary
+        fix_summary = ""
+        if changes:
+            fix_html = ""
+            for c in changes:
+                fix_html += f"""<tr>
+                  <td style="color:#22d4ee;font-size:12px;">🔧</td>
+                  <td style="font-size:13px;">{c['file']}:{c['line']}</td>
+                  <td style="font-size:12px;color:#94a3b8;">{c['issue'][:80]}</td>
+                  <td style="font-size:12px;color:#3fb950;">{c['fix']}</td>
+                </tr>"""
+            fix_summary = f"""<div class="section" style="background:linear-gradient(135deg,#0F172A,#020617);border:1px solid rgba(34,211,238,0.15);border-radius:12px;padding:16px;margin:24px;">
+              <div style="color:#22d4ee;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="var b=this.nextElementSibling,a=this.querySelector('.collapse-arrow');b.classList.toggle('closed');a&&a.classList.toggle('closed');">
+                🛠 Auto-Fixes Applied ({len(changes)})
+                <span class="collapse-arrow" style="font-size:12px;transition:transform .2s;">▼</span>
+              </div>
+              <div class="collapsible-body" style="overflow:hidden;transition:max-height .3s;">
+                <table style="width:100%;border-collapse:collapse;margin-top:12px;">
+                  <tr><th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);"></th>
+                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Location</th>
+                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Issue</th>
+                      <th style="text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">Fix</th></tr>
+                  {fix_html}
+                </table>
+                <div style="margin-top:12px;">
+                  <a href="/download/{scan_id}?format=zip" class="download-btn" download style="display:inline-block;padding:8px 20px;background:#22d4ee;color:#020617;border:none;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">⬇ Download Fixed Source</a>
+                </div>
+              </div>
+            </div>"""
+            report = report.replace('</div>\n</body>', f'{fix_summary}</div>\n</body>')
+
+        # Save download version (no back button)
+        download_report = report.replace(
+            '<div class="back-row">',
+            '<div class="back-row" style="display:none">',
+            1,
+        )
+
+        # Add download buttons
+        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
+        report = report.replace('<div class="meta-row">', download_btns, 1)
+
+        report_path = REPORTS_DIR / f"{scan_id}.html"
+        report_path.write_text(download_report, encoding="utf-8")
+
+        pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
+        if pdf_bytes:
+            pdf_path = REPORTS_DIR / f"{scan_id}.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+
+        scan_store[scan_id]["status"] = "done"
+        scan_store[scan_id]["report_html"] = report
+        scan_store[scan_id]["results"] = results
+
+    except Exception as e:
+        scan_store[scan_id]["status"] = "error"
+        scan_store[scan_id]["error"] = str(e)
+        print(f"Background scan {scan_id} failed: {e}", file=sys.stderr)
+
+
 # ── Routes ──────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -821,18 +1001,17 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
-@app.post("/scan/upload", response_class=HTMLResponse)
+@app.post("/scan/upload")
 async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), provider: str = Form("")):
-    """Accept a zip upload or single file, extract/process, scan, return HTML report."""
+    """Accept a zip upload or single file, scan in background, redirect to progress."""
     scan_id = str(uuid.uuid4())[:8]
-    tmpdir_obj = tempfile.TemporaryDirectory()
-    tmpdir = tmpdir_obj.name
+    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
+    os.makedirs(tmpdir, exist_ok=True)
 
     target_name = file.filename or "upload"
     is_zip = file.filename and file.filename.endswith(".zip")
 
     if is_zip:
-        # Extract zip
         zip_path = os.path.join(tmpdir, "project.zip")
         with open(zip_path, "wb") as f:
             content = await file.read()
@@ -841,7 +1020,6 @@ async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), pro
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_to)
     else:
-        # Single file — put in a temp directory
         extract_to = os.path.join(tmpdir, "project")
         os.makedirs(extract_to)
         file_path = os.path.join(extract_to, file.filename or "upload.txt")
@@ -849,70 +1027,31 @@ async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), pro
         with open(file_path, "wb") as f:
             f.write(content)
 
-    # Stream results via SSE
-    events = []
-    async for event in scan_project_stream(extract_to, target_name):
-        events.append(event)
+    scan_store[scan_id] = {
+        "status": "scanning", "type": "upload",
+        "target": target_name, "created_at": time.time(),
+        "tmpdir": tmpdir,
+    }
 
-    # Parse last event for results
-    results = None
-    for e in events:
-        if e.startswith("data: "):
-            data = json.loads(e[6:].strip())
-            if data.get("type") == "done":
-                results = data["results"]
+    asyncio.create_task(_run_scan_background(scan_id, extract_to, target_name, api_key, provider))
 
-    if not results:
-        return HTMLResponse("<h2>Scan failed</h2>", status_code=500)
-
-    ai_summary = ""
-    provider_name = ""
-    ai_summary, provider_name = await generate_ai_report_summary(api_key, target_name, results, provider)
-
-    report_id = str(uuid.uuid4())[:8]
-    report = generate_html_report(target_name, results, ai_summary, provider_name)
-
-    # Save download version (without back button → covers html + pdf)
-    download_report = report.replace(
-        '<div class="back-row">',
-        '<div class="back-row" style="display:none">',
-        1
-    )
-    report_path = REPORTS_DIR / f"{report_id}.html"
-    report_path.write_text(download_report, encoding="utf-8")
-
-    pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
-    if pdf_bytes:
-        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
-        pdf_path.write_bytes(pdf_bytes)
-
-    # Live version gets download buttons
-    full_report = report.replace(
-        '<div class="meta-row">',
-        f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download HTML</a><a href="/download/{report_id}?format=pdf" class="download-btn" download>📄 Download PDF</a>',
-        1
-    )
-    report = full_report
-
-    return HTMLResponse(content=report)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
 
 
-@app.post("/scan/url", response_class=HTMLResponse)
+@app.post("/scan/url")
 async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider: str = Form("")):
-    """Clone a git repo URL, scan via SSE, return HTML report."""
-    # Validate URL
+    """Clone a git repo URL, scan in background, redirect to progress."""
     if not validate_repo_url(repo_url):
-        return HTMLResponse(
-            content=f"<h2>Invalid repository URL</h2><p>Only GitHub, GitLab, and Bitbucket HTTPS URLs are allowed.</p><a href='/' class='back-btn' style='display:inline-block;padding:10px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;margin-top:16px;'>← Try Again</a>",
-            status_code=400,
-        )
+        return error_page("Invalid repository URL", "<p>Only GitHub, GitLab, and Bitbucket HTTPS URLs are allowed.</p><a href='/'>← Try Again</a>", 400)
     import urllib.parse
     repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
     if repo_name.endswith(".git"):
         repo_name = repo_name[:-4]
 
-    tmpdir_obj = tempfile.TemporaryDirectory()
-    tmpdir = tmpdir_obj.name
+    scan_id = str(uuid.uuid4())[:8]
+    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
+    os.makedirs(tmpdir, exist_ok=True)
     clone_to = os.path.join(tmpdir, "repo")
 
     try:
@@ -922,70 +1061,150 @@ async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider:
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
+            shutil.rmtree(tmpdir, ignore_errors=True)
             err = result.stderr[:300]
             is_auth = "could not read Username" in err or "Authentication failed" in err or "403" in err
             hint = ""
             if is_auth:
-                hint = "<p style='color:#eab308;margin-top:12px;'>💡 This looks like a <strong>private repository</strong>. Use a token in the URL:<br><code style='background:#0F172A;padding:4px 8px;border-radius:4px;font-size:13px;'>https://&lt;token&gt;@github.com/user/repo</code></p>"
-            return HTMLResponse(
-                content=f"<div style='max-width:600px;margin:40px auto;background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;'><h2 style='color:#ff7b72;margin-bottom:12px;'>Clone failed</h2><pre style='background:#020617;padding:16px;border-radius:8px;color:#94a3b8;font-size:13px;overflow-x:auto;'>{err}</pre>{hint}<a href='/' class='back-btn' style='display:inline-block;padding:10px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;margin-top:16px;'>← Try Again</a></div>",
-                status_code=400,
-            )
+                hint = '<p style="color:#eab308;margin-top:12px;font-size:13px;">This looks like a <strong>private repository</strong>. Use a token in the URL:<br><code style="background:#020617;padding:4px 8px;border-radius:4px;color:#22d4ee;">https://&lt;token&gt;@github.com/user/repo</code></p>'
+            body = f"<pre style='background:#020617;padding:16px;border-radius:8px;color:#94a3b8;font-size:13px;overflow-x:auto;text-align:left;'>{err}</pre>{hint}<a href='/'>← Try Again</a>"
+            return error_page("Clone failed", body, 400)
     except subprocess.TimeoutExpired:
-        return HTMLResponse("<h2>Clone timed out</h2>", status_code=400)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return error_page("Clone timed out", "<p>The repository clone operation exceeded the time limit.</p><a href='/'>← Try Again</a>", 400)
 
-    events = []
-    async for event in scan_project_stream(clone_to, repo_name):
-        events.append(event)
+    scan_store[scan_id] = {
+        "status": "scanning", "type": "url",
+        "target": repo_name, "created_at": time.time(),
+        "tmpdir": tmpdir,
+    }
 
-    results = None
-    for e in events:
-        if e.startswith("data: "):
-            data = json.loads(e[6:].strip())
-            if data.get("type") == "done":
-                results = data["results"]
+    asyncio.create_task(_run_scan_background(scan_id, clone_to, repo_name, api_key, provider))
 
-    if not results:
-        return HTMLResponse("<h2>Scan failed</h2>", status_code=500)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
 
-    ai_summary = ""
-    provider_name = ""
-    ai_summary, provider_name = await generate_ai_report_summary(api_key, repo_name, results, provider)
 
-    report_id = str(uuid.uuid4())[:8]
-    report = generate_html_report(repo_name, results, ai_summary, provider_name)
+# ── Progress / Status endpoints ─────────────────────────────────────
 
-    # Save download version (without back button → covers html + pdf)
-    download_report = report.replace(
-        '<div class="back-row">',
-        '<div class="back-row" style="display:none">',
-        1
-    )
-    report_path = REPORTS_DIR / f"{report_id}.html"
-    report_path.write_text(download_report, encoding="utf-8")
+PROGRESS_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scanning... - ZeroFlaw</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #020617; color: #e2e8f0; line-height: 1.6; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 32px; max-width: 560px; width: 100%; text-align: center; }
+  .spinner { width: 36px; height: 36px; border: 3px solid rgba(34,211,238,0.15); border-top-color: #22d4ee; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font-size: 20px; color: #f1f5f9; margin-bottom: 4px; }
+  .sub { color: #64748b; font-size: 13px; margin-bottom: 16px; }
+  .terminal { text-align: left; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; background: #020617; border-radius: 10px; padding: 16px; max-height: 300px; overflow-y: auto; margin-top: 8px; }
+  .status-line { margin: 4px 0; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .dot.ok { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+  .dot.warn { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.5); }
+  .dot.err { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+  .dot.busy { background: #22d4ee; box-shadow: 0 0 6px rgba(34,211,238,0.5); animation: pulse 0.8s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .err { color: #ef4444; }
+  .done { color: #22c55e; }
+  a { color: #22d4ee; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+<script>
+var scanId = '{scan_id}';
+function esc(s) { return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderSteps(steps) {
+  var html = '<p class="status-line" style="color:#64748b;">$ zeroflaw scan</p>';
+  for (var i = 0; i < steps.length; i++) {
+    var s = steps[i];
+    if (s.type === 'prompt') {
+      html += '<p class="status-line" style="color:#64748b;">' + esc(s.text) + '</p>';
+    } else if (s.type === 'running') {
+      html += '<p class="status-line"><span class="dot busy"></span> ' + esc(s.text) + '</p>';
+    } else if (s.type === 'ok') {
+      html += '<p class="status-line" style="color:#22c55e;"><span class="dot ok"></span> ' + esc(s.text) + '</p>';
+    } else if (s.type === 'warn') {
+      html += '<p class="status-line" style="color:#eab308;"><span class="dot warn"></span> ' + esc(s.text) + '</p>';
+    } else if (s.type === 'error') {
+      html += '<p class="status-line" style="color:#ef4444;"><span class="dot err"></span> ' + esc(s.text) + '</p>';
+    } else if (s.type === 'done') {
+      html += '<p class="status-line done">✓ Scan complete!</p>';
+    }
+  }
+  return html;
+}
+function poll() {
+  fetch('/scan/status/' + scanId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'done') { window.location.href = data.report_url; return; }
+      if (data.status === 'error') {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('terminal').innerHTML = '<p class="err">Scan failed: ' + esc(data.error || 'unknown error') + '</p><p style="margin-top:12px;"><a href="/">← Try Again</a></p>';
+        return;
+      }
+      if (data.steps) {
+        document.getElementById('terminal').innerHTML = renderSteps(data.steps);
+        document.getElementById('terminal').scrollTop = document.getElementById('terminal').scrollHeight;
+      }
+      setTimeout(poll, 2000);
+    })
+    .catch(function() { setTimeout(poll, 3000); });
+}
+poll();
+</script>
+</head>
+<body>
+<div class="card">
+  <div class="spinner" id="spinner"></div>
+  <h1>Scanning <span id="target">{target}</span></h1>
+  <p class="sub">Running security scanners. This may take a minute.</p>
+  <div class="terminal" id="terminal"><p class="status-line" style="color:#64748b;">$ zeroflaw scan</p></div>
+</div>
+</body>
+</html>"""
 
-    pdf_bytes = generate_pdf_report(repo_name, results, ai_summary, provider_name)
-    if pdf_bytes:
-        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
-        pdf_path.write_bytes(pdf_bytes)
 
-    full_report = report.replace(
-        '<div class="meta-row">',
-        f'<div class="meta-row"><a href="/download/{report_id}" class="download-btn" download>⬇ Download HTML</a><a href="/download/{report_id}?format=pdf" class="download-btn" download>📄 Download PDF</a>',
-        1
-    )
-    report = full_report
+@app.get("/progress/{scan_id}", response_class=HTMLResponse)
+async def scan_progress(scan_id: str):
+    """Show auto-refreshing progress page, redirect to report when done."""
+    entry = scan_store.get(scan_id)
+    if not entry:
+        return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
+    if entry["status"] == "done":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/download/{scan_id}", status_code=302)
+    if entry["status"] == "error":
+        err = entry.get("error", "Unknown error")
+        return error_page("Scan failed", f"<p>{err}</p><a href='/'>← Try Again</a>", 500)
 
-    return HTMLResponse(content=report)
+    page = PROGRESS_PAGE.replace("{scan_id}", scan_id).replace("{target}", entry.get("target", "project"))
+    return HTMLResponse(content=page)
+
+
+@app.get("/scan/status/{scan_id}")
+async def scan_status(scan_id: str):
+    """JSON endpoint for progress page polling."""
+    entry = scan_store.get(scan_id)
+    if not entry:
+        return JSONResponse({"status": "not_found"})
+    resp = {"status": entry["status"], "target": entry.get("target", "")}
+    if entry["status"] == "done":
+        resp["report_url"] = f"/download/{scan_id}"
+    if entry["status"] == "error":
+        resp["error"] = entry.get("error", "Unknown error")
+    if entry.get("steps"):
+        resp["steps"] = entry["steps"]
+    return JSONResponse(resp)
 
 
 @app.post("/scan/json", response_class=JSONResponse)
 async def scan_json(file: UploadFile = File(...)):
     """API endpoint — returns JSON results instead of HTML."""
-    api_key = ""
-    # Check X-Api-Key header
-    from fastapi import Header
-    # Actually we need to rewrite this as a separate handler
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, "project.zip")
         with open(zip_path, "wb") as f:
@@ -996,6 +1215,130 @@ async def scan_json(file: UploadFile = File(...)):
             zf.extractall(extract_to)
         results = run_scans_sync(extract_to)
     return results
+
+
+# ── Fix endpoints ────────────────────────────────────────────────────
+
+@app.post("/fix/upload")
+async def fix_upload(file: UploadFile = File(...), api_key: str = Form(""), provider: str = Form("")):
+    """Upload, scan, auto-fix in background, redirect to progress."""
+    scan_id = str(uuid.uuid4())[:8]
+    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
+    os.makedirs(tmpdir, exist_ok=True)
+
+    target_name = file.filename or "upload"
+    is_zip = file.filename and file.filename.endswith(".zip")
+
+    if is_zip:
+        zip_path = os.path.join(tmpdir, "project.zip")
+        with open(zip_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        extract_to = os.path.join(tmpdir, "project")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_to)
+    else:
+        extract_to = os.path.join(tmpdir, "project")
+        os.makedirs(extract_to)
+        file_path = os.path.join(extract_to, file.filename or "upload.txt")
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+    scan_store[scan_id] = {
+        "status": "scanning", "type": "upload",
+        "target": target_name, "created_at": time.time(),
+        "tmpdir": tmpdir,
+    }
+
+    asyncio.create_task(_run_scan_background(scan_id, extract_to, target_name, api_key, provider, is_fix=True))
+
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
+
+
+@app.post("/fix/url")
+async def fix_url(repo_url: str = Form(...), api_key: str = Form(""), provider: str = Form("")):
+    """Clone a URL, scan, auto-fix in background, redirect to progress."""
+    if not validate_repo_url(repo_url):
+        return error_page("Invalid repository URL", "<p>Only GitHub, GitLab, and Bitbucket HTTPS URLs are allowed.</p><a href='/'>← Try Again</a>", 400)
+    import urllib.parse
+    repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+
+    scan_id = str(uuid.uuid4())[:8]
+    tmpdir = os.path.join(BASE_DIR, "temp_scans", scan_id)
+    os.makedirs(tmpdir, exist_ok=True)
+    clone_to = os.path.join(tmpdir, "repo")
+
+    try:
+        git_path = shutil.which("git") or "git"
+        result = subprocess.run(
+            [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            err = result.stderr[:300]
+            is_auth = "could not read Username" in err or "Authentication failed" in err or "403" in err
+            hint = ""
+            if is_auth:
+                hint = '<p style="color:#eab308;margin-top:12px;font-size:13px;">This looks like a <strong>private repository</strong>. Use a token in the URL:<br><code style="background:#020617;padding:4px 8px;border-radius:4px;color:#22d4ee;">https://&lt;token&gt;@github.com/user/repo</code></p>'
+            body = f"<pre style='background:#020617;padding:16px;border-radius:8px;color:#94a3b8;font-size:13px;overflow-x:auto;text-align:left;'>{err}</pre>{hint}<a href='/'>← Try Again</a>"
+            return error_page("Clone failed", body, 400)
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return error_page("Clone timed out", "<p>The repository clone operation exceeded the time limit.</p><a href='/'>← Try Again</a>", 400)
+
+    scan_store[scan_id] = {
+        "status": "scanning", "type": "url",
+        "target": repo_name, "created_at": time.time(),
+        "tmpdir": tmpdir,
+    }
+
+    asyncio.create_task(_run_scan_background(scan_id, clone_to, repo_name, api_key, provider, is_fix=True))
+
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
+
+
+@app.get("/fix/run/{scan_id}")
+async def fix_run(scan_id: str):
+    """Run auto-fix on an already-scanned project and download the fixed zip."""
+    entry = scan_store.get(scan_id)
+    if not entry:
+        return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
+
+    tmpdir = entry.get("tmpdir")
+    project_path = os.path.join(tmpdir, "project") if tmpdir else None
+    if not project_path or not os.path.isdir(project_path):
+        return error_page("Source expired", "<p>The scanned project directory has been cleaned up.</p><a href='/'>← Home</a>", 400)
+
+    results = entry.get("results")
+    if not results:
+        return error_page("No results", "<p>The scan produced no results — try scanning again.</p><a href='/'>← Home</a>", 400)
+
+    changes = auto_fix.apply_fixes(project_path, results)
+    if not changes:
+        return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>No Fixable Issues — ZeroFlaw</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #020617; color: #e2e8f0; line-height: 1.6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
+  .card {{ background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; text-align: center; }}
+  h2 {{ color: #3fb950; font-size: 20px; margin-bottom: 12px; }}
+  p {{ color: #94a3b8; font-size: 14px; margin-bottom: 16px; }}
+  a {{ display: inline-block; padding: 10px 24px; background: #22d4ee; color: #020617; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }}
+  a:hover {{ background: #1bb3cc; }}
+</style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable patterns (bare except, bare assert) were detected in this project.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""", status_code=200)
+
+    fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
+    auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
+
+    from fastapi.responses import FileResponse
+    return FileResponse(str(fixed_zip_path), media_type="application/zip", filename=f"zeroflaw-fixed-{scan_id}.zip")
 
 
 # ── Sync scan helpers (for MCP tools) ────────────────────────────────
@@ -1083,15 +1426,20 @@ app.mount("/mcp", _mcp_app)
 
 @app.get("/download/{report_id}")
 async def download_report(report_id: str, format: str = "html"):
-    """Serve a saved report for download. Supports html and pdf formats."""
+    """Serve a saved report for download. Supports html, pdf, and zip formats."""
     if format == "pdf":
         pdf_path = REPORTS_DIR / f"{report_id}.pdf"
         if pdf_path.exists():
             from fastapi.responses import FileResponse
             return FileResponse(str(pdf_path), media_type="application/pdf", filename=f"zeroflaw-report-{report_id}.pdf")
+    if format == "zip":
+        zip_path = REPORTS_DIR / f"{report_id}-fixed.zip"
+        if zip_path.exists():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(zip_path), media_type="application/zip", filename=f"zeroflaw-fixed-{report_id}.zip")
     report_path = REPORTS_DIR / f"{report_id}.html"
     if not report_path.exists():
-        return HTMLResponse("<h2>Report not found</h2>", status_code=404)
+        return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)
     content = report_path.read_text(encoding="utf-8")
     return HTMLResponse(content=content)
 

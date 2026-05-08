@@ -144,7 +144,7 @@
   <div class="card">
     <h2>📤 Upload ZIP</h2>
     <p class="desc">Upload your project as a .zip file. All files are scanned in-memory and deleted after.</p>
-    <form id="uploadForm" action="/scan/upload" method="post" enctype="multipart/form-data" target="resultFrame">
+    <form id="uploadForm" action="/scan/upload" method="post" enctype="multipart/form-data">
       <div class="drop-zone" id="dropZone">
         <div class="icon">📁</div>
         <div class="text">Drop your project .zip or source file here or click to browse</div>
@@ -173,8 +173,9 @@
           <div class="hint">Select provider if auto-detect doesn't work. Your key is not stored.</div>
         </div>
       </div>
-      <div style="margin-top:16px;">
+      <div style="margin-top:16px;display:flex;gap:8px;">
         <button type="submit" class="btn" id="uploadBtn">Scan Upload</button>
+        <button type="submit" class="btn" id="uploadFixBtn" formaction="/fix/upload" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">🔧 Fix &amp; Scan</button>
       </div>
     </form>
     <div class="status" id="uploadStatus">
@@ -188,10 +189,11 @@
   <div class="card">
     <h2>🔗 GitHub URL</h2>
     <p class="desc">Paste a public GitHub repository URL. It will be cloned, scanned, and results delivered.</p>
-    <form id="urlForm" action="/scan/url" method="post" target="resultFrame">
+    <form id="urlForm" action="/scan/url" method="post">
       <div class="input-group">
         <input type="url" name="repo_url" placeholder="https://github.com/user/repo" required>
         <button type="submit" class="btn" id="urlBtn">Scan URL</button>
+        <button type="submit" class="btn" formaction="/fix/url" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">🔧 Fix &amp; Scan</button>
       </div>
       <!-- API Key Section -->
       <div class="api-section">
@@ -243,98 +245,31 @@
     document.getElementById('chevron-' + form).classList.toggle('open');
   }
 
-  // Terminal helper
-  const uploadSteps = [
-    'Extracting project files...',
-    'Initializing scanners...',
-    'Running Bandit (Python security)...',
-    'Running Ruff (lining)...',
-    'Running Semgrep (multi-language SAST)...',
-    'Checking dependencies...',
-    'Running Trivy (dependency scan)...',
-    'Scanning for secrets...',
-    'Running CodeQL scan...',
-    'Running OWASP ZAP scan...',
-    'Generating report...',
-  ];
-
-  const urlSteps = [
-    'Cloning repository from GitHub...',
-    'Initializing scanners...',
-    'Running Bandit (Python security)...',
-    'Running Ruff (Python linting)...',
-    'Running Semgrep (multi-language SAST)...',
-    'Checking dependencies...',
-    'Running Trivy (dependency scan)...',
-    'Scanning for secrets...',
-    'Running CodeQL scan...',
-    'Running OWASP ZAP scan...',
-    'Generating report...',
-  ];
-
-  function showTerminal(steps) {
-    var t = document.getElementById('scanTerminal');
-    var b = document.getElementById('terminalBody');
-    t.style.display = 'block';
-    b.innerHTML = '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan</p>';
-    var i = 0;
-    function addLine(text, type) {
-      var p = document.createElement('p');
-      p.className = 'terminal-line';
-      var dot = type === 'ok' ? 'ok' : type === 'warn' ? 'warn' : type === 'err' ? 'err' : 'busy';
-      if (type === 'done') {
-        p.innerHTML = '<span style="color:#22c55e">' + text + '</span>';
-      } else {
-        p.innerHTML = '<span class="dot ' + dot + '"></span> ' + text;
-      }
-      b.appendChild(p);
-      b.scrollTop = b.scrollHeight;
-    }
-    function playSteps() {
-      if (i >= steps.length) { addLine('Complete! Loading report...', 'done'); return; }
-      addLine(steps[i], 'busy');
-      i++;
-      setTimeout(playSteps, i === 1 ? 600 : 900);
-    }
-    playSteps();
-  }
-
-  // Upload form — fetch on desktop, regular submit on mobile
+  // Form submission — show terminal, then let browser submit natively
   document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    // Detect mobile — use regular form submit for reliability
-    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-      // Mobile: submit normally, show results
-      document.getElementById('uploadStatus').style.display = 'block';
-      document.getElementById('uploadBtn').disabled = true;
-      document.getElementById('scanTerminal').style.display = 'block';
-      return true;  // let form submit normally
-    }
-    e.preventDefault();
-    document.getElementById('uploadStatus').style.display = 'block';
-    document.getElementById('uploadBtn').disabled = true;
-    showTerminal(uploadSteps);
-    var formData = new FormData(this);
-    fetch('/scan/upload', { method: 'POST', body: formData })
-      .then(r => r.text())
-      .then(html => { document.open(); document.write(html); document.close(); })
-      .catch(err => { document.getElementById('terminalBody').innerHTML += '<p class="terminal-line" style="color:#ef4444">Error: ' + err + '</p>'; });
+    var btn = e.submitter;
+    var isFix = btn && btn.getAttribute('formaction') !== null;
+    document.getElementById('scanTerminal').style.display = 'block';
+    document.getElementById('terminalBody').innerHTML =
+      '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan ' + (isFix ? '--fix' : '') +
+      '</p><p class="terminal-line"><span class="dot busy"></span> ' +
+      (isFix ? 'Fixing and scanning' : 'Scanning') +
+      ' in progress... This may take a minute.</p>';
+    var buttons = this.querySelectorAll('button[type="submit"]');
+    for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
   });
 
-  // URL form — fetch on desktop, regular submit on mobile
   document.getElementById('urlForm').addEventListener('submit', function(e) {
-    if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-      document.getElementById('urlBtn').disabled = true;
-      document.getElementById('scanTerminal').style.display = 'block';
-      return true;
-    }
-    e.preventDefault();
-    document.getElementById('urlBtn').disabled = true;
-    showTerminal(urlSteps);
-    var formData = new FormData(this);
-    fetch('/scan/url', { method: 'POST', body: formData })
-      .then(r => r.text())
-      .then(html => { document.open(); document.write(html); document.close(); })
-      .catch(err => { document.getElementById('terminalBody').innerHTML += '<p class="terminal-line" style="color:#ef4444">Error: ' + err + '</p>'; });
+    var btn = e.submitter;
+    var isFix = btn && btn.getAttribute('formaction') !== null;
+    document.getElementById('scanTerminal').style.display = 'block';
+    document.getElementById('terminalBody').innerHTML =
+      '<p class="terminal-prompt" style="opacity:1">$ zeroflaw scan ' + (isFix ? '--fix' : '') +
+      '</p><p class="terminal-line"><span class="dot busy"></span> ' +
+      (isFix ? 'Fixing and scanning' : 'Scanning') +
+      ' in progress... This may take a minute.</p>';
+    var buttons = this.querySelectorAll('button[type="submit"]');
+    for (var i = 0; i < buttons.length; i++) { buttons[i].disabled = true; }
   });
 </script>
 </body>
