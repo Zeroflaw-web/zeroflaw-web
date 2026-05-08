@@ -1350,7 +1350,11 @@ async def fix_run(scan_id: str):
     tmpdir = entry.get("tmpdir")
     project_path = os.path.join(tmpdir, "project") if tmpdir else None
     if not project_path or not os.path.isdir(project_path):
-        return error_page("Source expired", "<p>The scanned project directory has been cleaned up.</p><a href='/'>← Home</a>", 400)
+        fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
+        if fixed_zip_path.exists():
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
+        return error_page("Source expired", "<p>The scanned project directory has been cleaned up. Rescan the project to apply fixes.</p><a href='/'>← Home</a>", 400)
 
     results = entry.get("results")
     if not results:
