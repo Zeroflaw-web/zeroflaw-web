@@ -901,17 +901,18 @@ async def _run_scan_background(
     scan_id: str, project_path: str, target_name: str,
     api_key: str, provider: str, is_fix: bool = False,
 ):
-    """Run scan in background and store results in scan_store."""
+    """Run scan in background and store results in scan_store.
+    
+    Updates scan_store steps in real-time so the progress page
+    sees each step as it happens, rather than all at once after
+    the scan finishes.
+    """
     try:
-        events = []
-        async for event in scan_project_stream(project_path, target_name):
-            events.append(event)
-
         results = None
-        steps = []
-        for e in events:
-            if e.startswith("data: "):
-                data = json.loads(e[6:].strip())
+        async for event in scan_project_stream(project_path, target_name):
+            if event.startswith("data: "):
+                data = json.loads(event[6:].strip())
+                steps = scan_store[scan_id].get("steps", [])
                 steps.append(data)
                 scan_store[scan_id]["steps"] = steps
                 if data.get("type") == "done":
