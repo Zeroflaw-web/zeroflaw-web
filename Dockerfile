@@ -57,5 +57,5 @@ EXPOSE 8555
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8555/health')" || exit 1
 
-# Run web app
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8555"]
+# Run web app — use PORT env var (Render sets this) with fallback to 8555
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8555}"]

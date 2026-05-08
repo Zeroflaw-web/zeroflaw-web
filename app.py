@@ -38,7 +38,7 @@ SECURITY_HEADERS = {
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:",
+    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';",
 }
 
 
@@ -1154,7 +1154,7 @@ function renderSteps(steps) {
     } else if (s.type === 'error') {
       html += '<p class="status-line" style="color:#ef4444;"><span class="dot err"></span> ' + esc(s.text) + '</p>';
     } else if (s.type === 'fix') {
-      html += '<p class="status-line" style="color:#22d4ee;"><span class="dot" style="background:#22d4ee;box-shadow:0 0 6px rgba(34,211,238,0.5);"></span> \uD83D\uDD27 ' + esc(s.text) + '</p>';
+      html += '<p class="status-line" style="color:#22d4ee;"><span class="dot" style="background:#22d4ee;box-shadow:0 0 6px rgba(34,211,238,0.5);"></span> \U0001F527 ' + esc(s.text) + '</p>';
     } else if (s.type === 'done') {
       html += '<p class="status-line done">✓ Scan complete!</p>';
     }
@@ -1165,10 +1165,20 @@ function poll() {
   fetch('/scan/status/' + scanId)
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.status === 'done') { window.location.href = data.report_url; return; }
+      if (data.status === 'done') {
+        if (data.report_url) { window.location.href = data.report_url; return; }
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('terminal').innerHTML = '<p class="done">✓ Scan complete! <a href="/">← Home</a></p>';
+        return;
+      }
       if (data.status === 'error') {
         document.getElementById('spinner').style.display = 'none';
         document.getElementById('terminal').innerHTML = '<p class="err">Scan failed: ' + esc(data.error || 'unknown error') + '</p><p style="margin-top:12px;"><a href="/">← Try Again</a></p>';
+        return;
+      }
+      if (data.status === 'not_found') {
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('terminal').innerHTML = '<p class="err">Scan session expired or not found.</p><p style="margin-top:12px;"><a href="/">← Try Again</a></p>';
         return;
       }
       if (data.steps) {
