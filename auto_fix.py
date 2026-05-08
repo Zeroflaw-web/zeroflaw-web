@@ -238,10 +238,16 @@ def _fix_package_json(source_dir: str, results: dict, changes: list) -> None:
                 if not isinstance(info, dict):
                     continue
                 fix = info.get("fixAvailable")
-                if fix and isinstance(fix, str):
+                if fix is None:
+                    continue
+                if isinstance(fix, str):
                     vuln_pkgs[name.lower()] = fix
+                elif isinstance(fix, dict):
+                    ver = fix.get("version")
+                    if ver:
+                        vuln_pkgs[name.lower()] = ver
 
-    vuln_pkgs.update(_trivy_pkgs_for_target(scans, "package.json"))
+    vuln_pkgs.update(_trivy_pkgs_for_target(scans, "package"))
 
     if not vuln_pkgs:
         return
