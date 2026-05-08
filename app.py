@@ -929,7 +929,25 @@ async def _run_scan_background(
 
         changes = []
         if is_fix:
+            fix_step = {"type": "running", "text": "🔧 Applying auto-fixes..."}
+            steps = scan_store[scan_id].get("steps", [])
+            steps.append(fix_step)
+            scan_store[scan_id]["steps"] = steps
+
             changes = auto_fix.apply_fixes(project_path, results)
+
+            if changes:
+                for c in changes:
+                    fix_result = {"type": "fix", "text": f"Fixed {c['file']}:{c['line']} — {c['fix']}"}
+                    steps = scan_store[scan_id].get("steps", [])
+                    steps.append(fix_result)
+                    scan_store[scan_id]["steps"] = steps
+            else:
+                no_fix = {"type": "ok", "text": "🔧 No fixable issues found"}
+                steps = scan_store[scan_id].get("steps", [])
+                steps.append(no_fix)
+                scan_store[scan_id]["steps"] = steps
+
             fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
             auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
 
@@ -984,6 +1002,9 @@ async def _run_scan_background(
         if pdf_bytes:
             pdf_path = REPORTS_DIR / f"{scan_id}.pdf"
             pdf_path.write_bytes(pdf_bytes)
+
+        if is_fix:
+            await asyncio.sleep(1.5)
 
         scan_store[scan_id]["status"] = "done"
         scan_store[scan_id]["report_html"] = report
@@ -1132,6 +1153,8 @@ function renderSteps(steps) {
       html += '<p class="status-line" style="color:#eab308;"><span class="dot warn"></span> ' + esc(s.text) + '</p>';
     } else if (s.type === 'error') {
       html += '<p class="status-line" style="color:#ef4444;"><span class="dot err"></span> ' + esc(s.text) + '</p>';
+    } else if (s.type === 'fix') {
+      html += '<p class="status-line" style="color:#22d4ee;"><span class="dot" style="background:#22d4ee;box-shadow:0 0 6px rgba(34,211,238,0.5);"></span> \uD83D\uDD27 ' + esc(s.text) + '</p>';
     } else if (s.type === 'done') {
       html += '<p class="status-line done">✓ Scan complete!</p>';
     }
