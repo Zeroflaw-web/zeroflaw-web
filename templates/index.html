@@ -108,6 +108,19 @@
   .dot.err { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
   .dot.busy { background: #22d4ee; box-shadow: 0 0 6px rgba(34,211,238,0.5); animation: pulse 0.8s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  @media (max-width: 600px) {
+    .container { padding: 20px 12px; }
+    .hero { padding: 24px 16px; }
+    .hero h1 { font-size: 24px; }
+    .card { padding: 16px; }
+    .input-group { flex-direction: column; }
+    .btn { width: 100%; text-align: center; }
+    .drop-zone { padding: 20px 16px; }
+    .badge-row { gap: 4px; }
+    .badge { font-size: 10px; padding: 3px 10px; }
+    .footer { font-size: 11px; padding: 0 8px; line-height: 1.5; word-break: break-word; }
+  }
 </style>
 </head>
 <body>
