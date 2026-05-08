@@ -948,6 +948,18 @@ async def _run_scan_background(
             pdf_path = REPORTS_DIR / f"{scan_id}.pdf"
             pdf_path.write_bytes(pdf_bytes)
 
+        # Save project source alongside report so Fix & Download works later
+        source_dir = REPORTS_DIR / scan_id / "source"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        for item in os.listdir(project_path):
+            src = os.path.join(project_path, item)
+            dst = os.path.join(str(source_dir), item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
+            else:
+                shutil.copy2(src, dst)
+        scan_store[scan_id]["project_dir"] = str(source_dir)
+
         scan_store[scan_id]["status"] = "done"
         scan_store[scan_id]["report_html"] = report
         scan_store[scan_id]["results"] = results
@@ -1202,6 +1214,8 @@ async def fix_run(scan_id: str):
 
     tmpdir = entry.get("tmpdir")
     project_path = os.path.join(tmpdir, "project") if tmpdir else None
+    if not project_path or not os.path.isdir(project_path):
+        project_path = entry.get("project_dir")
     if not project_path or not os.path.isdir(project_path):
         fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
         if fixed_zip_path.exists():
