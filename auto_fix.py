@@ -50,6 +50,23 @@ def apply_fixes(source_dir: str, results: dict) -> list[dict]:
     _fix_pom_xml(source_dir, results, changes)
     _fix_cargo_toml(source_dir, results, changes)
 
+    # Remove stale lock files after npm fix — they keep old versions and
+    # cause re-scans to report the same vulnerabilities. User runs
+    # `npm install` at deployment which regenerates them correctly.
+    npm_lockfiles = ("package-lock.json", "yarn.lock", "pnpm-lock.yaml")
+    for lf in npm_lockfiles:
+        lf_path = os.path.join(source_dir, lf)
+        if os.path.isfile(lf_path):
+            try:
+                os.remove(lf_path)
+                changes.append({
+                    "file": lf, "line": 1,
+                    "issue": "Stale lock file with outdated versions",
+                    "fix": f"Removed {lf} — run `npm install` to regenerate"
+                })
+            except OSError:
+                pass
+
     return changes
 
 
@@ -523,12 +540,13 @@ def _fix_cargo_toml(source_dir: str, results: dict, changes: list) -> None:
 
 
 def create_fixed_zip(source_dir: str, output_path: str) -> str:
-    """Create a zip of the source directory (excluding caches)."""
+    """Create a zip of the source directory (excluding caches and lock files)."""
+    _excluded_files = {".pyc", ".pyo", ".zip", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(source_dir):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
             for fn in files:
-                if fn.endswith((".pyc", ".pyo", ".zip")):
+                if fn in _excluded_files:
                     continue
                 path = os.path.join(root, fn)
                 arcname = os.path.relpath(path, source_dir)

@@ -489,6 +489,19 @@ def generate_html_report(target_name: str, results: dict, ai_summary: str = "", 
   .verdict-caveats {{ background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }}
   .verdict-review {{ background: rgba(239,68,68,0.1); color: #ff7b72; border: 1px solid rgba(239,68,68,0.2); }}
   @page {{ margin: 2cm 2.5cm; size: A4; }}
+  @media (max-width: 600px) {{
+    .container {{ padding: 0 12px; }}
+    .report-header {{ padding: 20px 16px; }}
+    .report-header h1 {{ font-size: 18px; }}
+    .stats-grid {{ grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 16px 12px; }}
+    .stat-card {{ padding: 12px; }}
+    .stat-card .num {{ font-size: 24px; }}
+    .section {{ margin: 16px 12px; }}
+    .finding-row {{ flex-direction: column; gap: 4px; padding: 10px 12px; }}
+    .finding-sev {{ width: 100%; }}
+    .meta-row {{ flex-direction: column; gap: 8px; }}
+    .download-btn {{ width: 100%; text-align: center; }}
+  }}
   @media print {{
     body {{ background: #fff !important; color: #1a1a1a !important; font-size: 11pt; line-height: 1.5; }}
     .container {{ max-width: 100%; padding: 0; }}
@@ -1234,19 +1247,55 @@ async def fix_run(scan_id: str):
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>No Fixable Issues — ZeroFlaw</title>
 <style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #020617; color: #e2e8f0; line-height: 1.6; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
-  .card {{ background: #0F172A; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; text-align: center; }}
-  h2 {{ color: #3fb950; font-size: 20px; margin-bottom: 12px; }}
-  p {{ color: #94a3b8; font-size: 14px; margin-bottom: 16px; }}
-  a {{ display: inline-block; padding: 10px 24px; background: #22d4ee; color: #020617; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }}
-  a:hover {{ background: #1bb3cc; }}
-</style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable patterns (bare except, bare assert) were detected in this project.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""", status_code=200)
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}}
+  .card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:520px;width:100%;text-align:center}}
+  h2{{color:#3fb950;font-size:20px;margin-bottom:12px}}
+  p{{color:#94a3b8;font-size:14px;margin-bottom:16px}}
+  a{{display:inline-block;padding:10px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600}}
+  a:hover{{background:#1bb3cc}}
+</style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable security patterns were detected in this project.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""", status_code=200)
 
     fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
     auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
 
-    from fastapi.responses import FileResponse
-    return FileResponse(str(fixed_zip_path), media_type="application/zip", filename=f"zeroflaw-fixed-{scan_id}.zip")
+    fix_rows = ""
+    for c in changes:
+        fix_rows += f"""<tr>
+          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#22d4ee;">🔧</td>
+          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">{c['file']}:{c['line']}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#94a3b8;">{c['issue'][:80]}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#3fb950;">{c['fix']}</td>
+        </tr>"""
+
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Fixes Applied — ZeroFlaw</title>
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}
+  .card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:640px;width:100%}}
+  h2{{color:#22d4ee;font-size:20px;margin-bottom:4px;display:flex;align-items:center;gap:8px}}
+  .subtitle{{color:#64748b;font-size:13px;margin-bottom:20px}}
+  table{{width:100%;border-collapse:collapse;margin-bottom:20px}}
+  th{{text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.1);text-transform:uppercase;letter-spacing:1px}}
+  .btn{{display:inline-block;padding:12px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px}}
+  .btn:hover{{background:#1bb3cc}}
+  .btn-sec{{display:inline-block;padding:12px 24px;background:rgba(255,255,255,0.05);color:#e2e8f0;border:1px solid rgba(255,255,255,0.08);border-radius:10px;text-decoration:none;font-size:14px}}
+  .btn-sec:hover{{background:rgba(255,255,255,0.08)}}
+</style></head><body><div class="card">
+  <h2>🛠 Fixes Applied ({len(changes)})</h2>
+  <p class="subtitle">The following changes were made to your project:</p>
+  <table>
+    <tr><th></th><th>Location</th><th>Issue</th><th>Fix</th></tr>
+    {fix_rows}
+  </table>
+  <div>
+    <a href="/download/{scan_id}?format=zip" class="btn" download>⬇ Download Fixed Source (.zip)</a>
+    <a href="/download/{scan_id}" class="btn-sec">← Back to Report</a>
+  </div>
+</div></body></html>""", status_code=200)
 
 
 # ── Sync scan helpers (for MCP tools) ────────────────────────────────
