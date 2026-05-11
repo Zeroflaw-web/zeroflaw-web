@@ -13,5 +13,6 @@ dependencies = []
 [project.scripts]
 zeroflaw = "zeroflaw:main"
 
-[project.packages]
-auto_fix = "auto_fix"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zeroflaw*", "auto_fix*"]
