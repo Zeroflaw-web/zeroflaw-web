@@ -50,9 +50,14 @@ def _get_bucket() -> b2.Bucket:
 
 
 def put(scan_id: str, data: dict) -> None:
-    """Store scan metadata as JSON in B2."""
+    """Store scan metadata as JSON in B2. Overwrites existing entries."""
     key = f"scan_store/{scan_id}.json"
     bucket = _get_bucket()
+    try:
+        file = bucket.download_file_by_name(key)
+        bucket.delete_file_version(file.download_version.id_, key)
+    except (b2.exception.FileNotPresent, b2.exception.B2Error):
+        pass
     bucket.upload_bytes(
         json.dumps(data, default=str).encode("utf-8"),
         key,
