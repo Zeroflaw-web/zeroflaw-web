@@ -40,7 +40,11 @@ COPY zeroflaw.py .
 COPY auto_fix.py .
 COPY mcp_server.py .
 COPY app.py .
+COPY setup.py .
 COPY templates/ templates/
+
+# Install zeroflaw CLI command
+RUN pip install -e .
 
 # Create uploads directory
 RUN mkdir -p uploads

@@ -33,6 +33,22 @@ docker run -d --name zeroflaw-web -p 8555:8555 zeroflaw-web
 
 Open **http://localhost:8555** in your browser.
 
+## CLI Usage
+
+After installing (`pip install -e .`), you can run scans from command line:
+
+```bash
+zeroflaw scan <path>              # Run all security scans
+zeroflaw scan <path> --quick      # Skip Semgrep and OWASP (faster)
+zeroflaw scan <path> --bandit     # Bandit only (Python security)
+zeroflaw scan <path> --ruff       # Ruff only (linting)
+zeroflaw scan <path> --semgrep    # Semgrep only
+zeroflaw scan <path> --npm        # npm audit only
+zeroflaw scan <path> --pip        # pip audit only
+zeroflaw scan <path> --owasp      # OWASP Dependency-Check only
+zeroflaw --help                   # Show help
+```
+
 ## Usage
 
 ### Upload a ZIP
