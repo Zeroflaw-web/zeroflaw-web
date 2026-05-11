@@ -1,6 +1,8 @@
 import json
 import re
 import os
+import shutil
+import subprocess
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import List, Optional
@@ -52,6 +54,24 @@ def apply_fixes(source_dir: str, results: dict) -> list[dict]:
     _fix_go_mod(source_dir, results, changes)
     _fix_pom_xml(source_dir, results, changes)
     _fix_cargo_toml(source_dir, results, changes)
+
+    if shutil.which("ruff"):
+        try:
+            result = subprocess.run(
+                ["ruff", "check", "--fix", "--exit-zero", source_dir],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.stdout:
+                changes.append({
+                    "file": "ruff",
+                    "line": 1,
+                    "issue": "Python linting issues auto-fixed by ruff",
+                    "fix": result.stdout.strip()[:500]
+                })
+        except Exception:
+            pass
 
     # Remove stale lock files after npm fix — they keep old versions and
     # cause re-scans to report the same vulnerabilities. User runs
@@ -114,16 +134,41 @@ def _fix_file(path: str, lineno: int, scan: str, msg: str, changes: list, filepa
                 return 0
 
     # Fix 3: assert statement (condition only, excluding optional error message)
-    m = re.match(r"^(\s*)assert\s+(.+?)(?:\s*,\s*.*)?$", line)
+    m = re.match(r"^(\s*)assert\s+(.+)$", line)
     if m:
         indent = m.group(1)
-        condition = m.group(2).strip()
+        full_condition = m.group(2).strip()
+        # Remove optional message after comma
+        if ',' in full_condition:
+            condition = full_condition.split(',')[0].strip()
+        else:
+            condition = full_condition
         sanitized = condition.replace('"', "'")
         lines[idx] = f"{indent}if not ({condition}):\n"
         lines.insert(idx + 1, f'{indent}    raise ValueError("Validation failed: {sanitized}")\n')
         _write_lines(path, lines)
         changes.append({"file": filepath, "line": lineno, "issue": msg, "fix": "Replaced assert with proper validation"})
         return 1  # inserted 1 line
+
+    # Fix for broken if statements with missing closing paren (from previous assert fix bug)
+    # Matches: if not (condition:  -> should be: if not (condition):
+    if "if not (" in line and line.rstrip().endswith(":"):
+        # Check if there's an imbalance of parentheses before the colon
+        match = re.match(r"^(.*if not \()(.*)(\):)$", line.rstrip())
+        if match:
+            prefix = match.group(1)
+            middle = match.group(2)
+            suffix = match.group(3)
+            # Count parens in middle - if more ( than ), add closing parens
+            open_count = middle.count("(")
+            close_count = middle.count(")")
+            if open_count > close_count:
+                needed = open_count - close_count
+                middle += ")" * needed
+                lines[idx] = prefix + middle + suffix + "\n"
+                _write_lines(path, lines)
+                changes.append({"file": filepath, "line": lineno, "issue": msg, "fix": "Fixed missing closing parenthesis"})
+                return 0
 
     # Fix 4: `except Exception: pass` on one line (silent exception swallowing)
     m = re.match(r"^(\s*)except\s+Exception\s*:\s*pass\s*$", line)

@@ -945,12 +945,25 @@ def main():
             sys.exit(1)
 
         if results:
-            print(f"\n{C.bold(C.yellow('→ Started fixing the issues, please wait...'))}")
-            changes = auto_fix.apply_fixes(target, results)
-            print(f"\n{C.bold(f'Applied {len(changes)} fix(es):')}")
+            print(f"\n{C.bold(C.yellow('→ Copying project to temp directory for safe fixing...'))}")
+            import tempfile
+            import shutil as _shutil
+            tmpdir = tempfile.mkdtemp(prefix="zeroflaw_fix_")
+            fixed_dir = os.path.join(tmpdir, os.path.basename(os.path.rstrip(os.sep)))
+            if os.path.isdir(target):
+                _shutil.copytree(target, fixed_dir, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
+            else:
+                _shutil.copy2(target, tmpdir)
+                fixed_dir = tmpdir
+            print(f"{C.green('✓')} Copied to {tmpdir}")
+            print(f"\n{C.bold(C.yellow('→ Started fixing the issues...'))}")
+            changes = auto_fix.apply_fixes(fixed_dir, results)
+            print(f"\n{C.bold(f'Applied {len(changes)} fix(es) in {tmpdir}:')}")
             for c in changes:
                 print(f"  {C.cyan(c['file'])}:{c['line']} — {c['issue']}")
                 print(f"    {C.green('→')} {c['fix']}")
+            print(f"\n{C.green('✓')} Fixed files are in: {tmpdir}")
+            print(f"{C.yellow('→')} To create a zip: cd {tmpdir} && zip -r ../zeroflaw-fixed.zip .")
     else:
         parser.print_help()
         sys.exit(1)

@@ -771,6 +771,16 @@ async def scan_project_stream(project_path: str, target_name: str):
     yield f"data: {json.dumps({'type':'prompt','text':f'$ zeroflaw scan {target_name[:50]}'})}\n\n"
     await asyncio.sleep(0.3)
 
+    # Pre-scan: reject huge repos before running any tools
+    file_count = 0
+    for root, dirs, files in os.walk(project_path):
+        dirs[:] = [d for d in dirs if d not in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")]
+        file_count += len(files)
+        if file_count > 10_000:
+            yield f"data: {json.dumps({'type':'error','text':'Repository has too many files (> 10,000). Try adding .scannerignore or scan a subdirectory.'})}\n\n"
+            yield f"data: {json.dumps({'type':'done','results':{'error':'Too many files'}})}\n\n"
+            return
+
     for key, label, scanner in scans_to_run:
         yield f"data: {json.dumps({'type':'running','text':f'{label}...'})}\n\n"
         await asyncio.sleep(0.1)
@@ -943,8 +953,11 @@ async def _run_scan_background(
         report = generate_html_report(target_name, results, ai_summary, provider_name)
 
         # Add download buttons (must happen before creating download_report)
-        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
+        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}?format=html" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
         report = report.replace('<div class="meta-row">', download_btns, 1)
+
+        report_path = REPORTS_DIR / f"{scan_id}.html"
+        report_path.write_text(report, encoding="utf-8")
 
         # Save download version (no back button)
         download_report = report.replace(
@@ -952,9 +965,8 @@ async def _run_scan_background(
             '<div class="back-row" style="display:none">',
             1,
         )
-
-        report_path = REPORTS_DIR / f"{scan_id}.html"
-        report_path.write_text(download_report, encoding="utf-8")
+        download_path = REPORTS_DIR / f"{scan_id}-download.html"
+        download_path.write_text(download_report, encoding="utf-8")
 
         pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
         if pdf_bytes:
@@ -1384,16 +1396,27 @@ app.mount("/mcp", _mcp_app)
 @app.get("/download/{report_id}")
 async def download_report(report_id: str, format: str = "html"):
     """Serve a saved report for download. Supports html, pdf, and zip formats."""
+    entry = scan_store.get(report_id)
     if format == "pdf":
         pdf_path = REPORTS_DIR / f"{report_id}.pdf"
         if pdf_path.exists():
+            target_name = (entry.get("target", "project") if entry else "project").replace(".zip", "")
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in target_name)
             from fastapi.responses import FileResponse
-            return FileResponse(str(pdf_path), media_type="application/pdf", filename=f"zeroflaw-report-{report_id}.pdf")
+            return FileResponse(str(pdf_path), media_type="application/pdf", filename=f"{safe_name}-report.pdf")
     if format == "zip":
+        entry = scan_store.get(report_id)
         zip_path = REPORTS_DIR / f"{report_id}-fixed.zip"
         if zip_path.exists():
+            target_name = (entry.get("target", "project") if entry else "project").replace(".zip", "")
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in target_name)
+            zip_name = f"{safe_name}-fixed.zip"
             from fastapi.responses import FileResponse
-            return FileResponse(str(zip_path), media_type="application/zip", filename=f"zeroflaw-fixed-{report_id}.zip")
+            return FileResponse(str(zip_path), media_type="application/zip", filename=zip_name)
+    download_path = REPORTS_DIR / f"{report_id}-download.html"
+    if download_path.exists():
+        content = download_path.read_text(encoding="utf-8")
+        return HTMLResponse(content=content)
     report_path = REPORTS_DIR / f"{report_id}.html"
     if not report_path.exists():
         return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)

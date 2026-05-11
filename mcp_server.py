@@ -228,16 +228,24 @@ def register_tools(mcp):
         if not os.path.isdir(path):
             return f"❌ Path does not exist or not a directory: {path}"
 
-        results = run_scans(path, quick=True)
-        changes = auto_fix.apply_fixes(path, {"scans": results})
+        import tempfile as _tmp
+        import shutil as _shutil
+        tmpdir = _tmp.mkdtemp(prefix="zeroflaw_fix_")
+        fixed_dir = os.path.join(tmpdir, os.path.basename(os.path.rstrip(os.sep)))
+        _shutil.copytree(path, fixed_dir, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
+
+        results = run_scans(fixed_dir, quick=True)
+        changes = auto_fix.apply_fixes(fixed_dir, {"scans": results})
 
         if not changes:
-            return "✓ No issues to fix."
+            _shutil.rmtree(tmpdir, ignore_errors=True)
+            return f"✓ Scan complete. No auto-fixable issues found."
 
-        lines = [f"## Applied {len(changes)} fix(es)\n"]
+        lines = [f"## Applied {len(changes)} fix(es) in temp dir: {tmpdir}\n"]
         for c in changes:
             lines.append(f"- **{c['file']}:{c['line']}** — {c['issue']}")
             lines.append(f"  - Fix: {c['fix']}")
+        lines.append(f"\n**Fixed files are in:** `{tmpdir}`")
         return "\n".join(lines)
 
     @mcp.tool()
