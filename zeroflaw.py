@@ -799,11 +799,13 @@ def run_scan(target_path, args):
             npm_result = scan_npm_dependencies(target_path)
             vulns = extract_npm_vulns(npm_result)
             print_dependency_vulns(vulns, "npm audit")
+            all_results["scans"]["npm_audit"] = {"vulnerabilities": vulns}
 
         if (args.pip or args.all) and has_requirements:
             pip_result = scan_python_dependencies(target_path)
             vulns = extract_pip_vulns(pip_result)
             print_dependency_vulns(vulns, "pip audit")
+            all_results["scans"]["pip_audit"] = {"dependencies": [{"name": v.get("package", ""), "vulns": [v]} for v in vulns] if vulns else []}
 
         if args.owasp or args.all:
             print(f"  {C.yellow('⟳')} OWASP Dependency-Check running... (first run downloads NVD database, may take 5-10 min)")

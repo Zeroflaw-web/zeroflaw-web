@@ -47,6 +47,8 @@ def apply_fixes(source_dir: str, results: dict) -> list[dict]:
 
     _fix_requirements_txt(source_dir, results, changes)
     _fix_package_json(source_dir, results, changes)
+    _fix_pnpm(source_dir, results, changes)
+    _fix_pyproject_toml(source_dir, results, changes)
     _fix_go_mod(source_dir, results, changes)
     _fix_pom_xml(source_dir, results, changes)
     _fix_cargo_toml(source_dir, results, changes)
@@ -301,6 +303,113 @@ def _fix_package_json(source_dir: str, results: dict, changes: list) -> None:
         with open(pkg_path, "w", encoding="utf-8") as f:
             json.dump(pkg, f, indent=2)
             f.write("\n")
+
+
+def _fix_pnpm(source_dir: str, results: dict, changes: list) -> None:
+    """Update vulnerable pnpm packages to fix version from audit."""
+    scans = results.get("scans", {})
+    vuln_pkgs = {}
+
+    npm_data = scans.get("npm_audit", {})
+    if isinstance(npm_data, dict):
+        vulnerabilities = npm_data.get("vulnerabilities", {})
+        if isinstance(vulnerabilities, dict):
+            for name, info in vulnerabilities.items():
+                if not isinstance(info, dict):
+                    continue
+                fix = info.get("fixAvailable")
+                if fix is None:
+                    continue
+                if isinstance(fix, str):
+                    vuln_pkgs[name.lower()] = fix
+                elif isinstance(fix, dict):
+                    ver = fix.get("version")
+                    if ver:
+                        vuln_pkgs[name.lower()] = ver
+
+    vuln_pkgs.update(_trivy_pkgs_for_target(scans, "pnpm"))
+
+    if not vuln_pkgs:
+        return
+
+    pkg_path = os.path.join(source_dir, "package.json")
+    if not os.path.isfile(pkg_path):
+        return
+
+    with open(pkg_path, "r", encoding="utf-8") as f:
+        pkg = json.load(f)
+
+    modified = False
+    for dep_type in ("dependencies", "devDependencies"):
+        if dep_type not in pkg:
+            continue
+        for name in pkg[dep_type]:
+            if name.lower() in vuln_pkgs:
+                fixed_ver = vuln_pkgs[name.lower()]
+                if pkg[dep_type][name] != fixed_ver:
+                    changes.append({
+                        "file": "package.json",
+                        "line": 1,
+                        "issue": f"Vulnerable pnpm package {name}",
+                        "fix": f"Updated {name} to {fixed_ver}"
+                    })
+                    pkg[dep_type][name] = fixed_ver
+                    modified = True
+
+    if modified:
+        with open(pkg_path, "w", encoding="utf-8") as f:
+            json.dump(pkg, f, indent=2)
+            f.write("\n")
+
+
+def _fix_pyproject_toml(source_dir: str, results: dict, changes: list) -> None:
+    """Update vulnerable Python packages in pyproject.toml (uv/pip)."""
+    scans = results.get("scans", {})
+    vuln_pkgs = {}
+
+    pip_data = scans.get("pip_audit", {})
+    if isinstance(pip_data, dict) and "dependencies" in pip_data:
+        for dep in pip_data["dependencies"]:
+            name = dep.get("name", "").lower()
+            if not name:
+                continue
+            for v in dep.get("vulns", []):
+                fix_versions = v.get("fix_versions", [])
+                if fix_versions:
+                    vuln_pkgs[name] = fix_versions[0]
+                    break
+
+    vuln_pkgs.update(_trivy_pkgs_for_target(scans, "pyproject.toml"))
+
+    if not vuln_pkgs:
+        return
+
+    pyproj_path = os.path.join(source_dir, "pyproject.toml")
+    if not os.path.isfile(pyproj_path):
+        return
+
+    with open(pyproj_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    modified = False
+    for pkg_name, fixed_ver in vuln_pkgs.items():
+        pattern = rf'(^|\n)({re.escape(pkg_name)}\s*=\s*["\']?)([=<>!~]+)?([0-9.*]+)?'
+        match = re.search(pattern, content, re.MULTILINE)
+        if match:
+            indent = match.group(1)
+            pkg = match.group(2).strip()
+            content = content[:match.start()] + f'{indent}{pkg} = "^{fixed_ver}"' + content[match.end():]
+            modified = True
+            changes.append({
+                "file": "pyproject.toml",
+                "line": 1,
+                "issue": f"Vulnerable Python package {pkg_name}",
+                "fix": f"Updated {pkg_name} to ^^{fixed_ver}"
+            })
+
+    if modified:
+        with open(pyproj_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
 
 def _ensure_go_version(ver: str) -> str:
