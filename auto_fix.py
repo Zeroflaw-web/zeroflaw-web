@@ -19,17 +19,18 @@ def apply_fixes(source_dir: str, results: dict) -> list[dict]:
     for scan_name, data in scans.items():
         if not isinstance(data, dict) or data.get("error"):
             continue
-        for r in data.get("results", []):
-            filepath = r.get("filename") or r.get("file") or ""
-            lineno = r.get("line_number") or r.get("line") or 0
+        results_list = data.get("results") or data.get("findings") or []
+        for r in results_list:
+            filepath = r.get("filename") or r.get("file") or r.get("path") or ""
+            lineno = r.get("line_number") or r.get("line") or r.get("start_line") or 0
             if not filepath or not lineno:
                 continue
             try:
                 lineno = int(lineno)
             except (ValueError, TypeError):
                 continue
-            msg = r.get("issue_text") or r.get("message") or ""
-            sev = (r.get("issue_severity") or "").upper()
+            msg = r.get("issue_text") or r.get("message") or r.get("description") or ""
+            sev = r.get("issue_severity") or r.get("severity") or ""
             by_file.setdefault(filepath, []).append({
                 "line": lineno, "msg": msg, "sev": sev, "scan": scan_name,
             })
