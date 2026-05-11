@@ -943,6 +943,7 @@ def main():
             sys.exit(1)
 
         if results:
+            print(f"\n{C.bold(C.yellow('→ Started fixing the issues, please wait...'))}")
             changes = auto_fix.apply_fixes(target, results)
             print(f"\n{C.bold(f'Applied {len(changes)} fix(es):')}")
             for c in changes:
