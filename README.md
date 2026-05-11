@@ -35,22 +35,35 @@ Open **http://localhost:8555** in your browser.
 
 ## CLI Usage
 
-After installing (`pip install -e .`), you can run scans from command line:
+### Option 1: Direct (no install)
+```bash
+# Windows
+zeroflaw.bat scan <path>
 
+# Linux/macOS
+./zeroflaw.sh scan <path>
+```
+
+### Option 2: Install (recommended for frequent use)
+```bash
+pip install -e .
+zeroflaw scan <path>
+```
+After install, the `zeroflaw` command works from anywhere.
+
+### CLI Commands
 ```bash
 zeroflaw scan <path>              # Run all security scans
 zeroflaw scan <path> --quick      # Skip Semgrep and OWASP (faster)
-zeroflaw scan <path> --bandit     # Bandit only (Python security)
-zeroflaw scan <path> --ruff       # Ruff only (linting)
+zeroflaw scan <path> --bandit     # Bandit only
+zeroflaw scan <path> --ruff       # Ruff only
 zeroflaw scan <path> --semgrep    # Semgrep only
-zeroflaw scan <path> --npm        # npm audit only
-zeroflaw scan <path> --pip        # pip audit only
-zeroflaw scan <path> --owasp      # OWASP Dependency-Check only
-zeroflaw --help                   # Show help
+zeroflaw scan <path> --trivy      # Trivy only (dependencies)
 
 # Auto-fix
-zeroflaw fix <path> --scan         # Scan and auto-fix issues in one go
-zeroflaw fix <path> --results <file>  # Apply fixes from saved results JSON
+zeroflaw fix <path> --scan        # Scan and auto-fix issues
+zeroflaw fix <path> --results <file>  # Apply fixes from saved results
+zeroflaw --help                   # Show help
 ```
 
 ## Usage
