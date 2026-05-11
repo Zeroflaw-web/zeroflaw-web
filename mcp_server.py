@@ -213,6 +213,80 @@ def register_tools(mcp):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    @mcp.tool()
+    def fix_directory(path: str) -> str:
+        """Run security scan and auto-fix issues in a local directory.
+
+        Args:
+            path: Local directory path to scan and fix
+
+        Returns:
+            A markdown summary of changes made (fixes applied).
+        """
+        import auto_fix
+
+        if not os.path.isdir(path):
+            return f"❌ Path does not exist or not a directory: {path}"
+
+        results = run_scans(path, quick=True)
+        changes = auto_fix.apply_fixes(path, {"scans": results})
+
+        if not changes:
+            return "✓ No issues to fix."
+
+        lines = [f"## Applied {len(changes)} fix(es)\n"]
+        for c in changes:
+            lines.append(f"- **{c['file']}:{c['line']}** — {c['issue']}")
+            lines.append(f"  - Fix: {c['fix']}")
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def fix_url(repo_url: str) -> str:
+        """Clone a GitHub URL, scan, and auto-fix all issues.
+
+        Args:
+            repo_url: Full HTTPS URL to the repository
+
+        Returns:
+            A markdown summary of fixes applied.
+        """
+        import urllib.parse
+        import auto_fix
+
+        repo_name = os.path.basename(urllib.parse.urlparse(repo_url).path) or "repo"
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+
+        tmpdir = tempfile.mkdtemp()
+        clone_to = os.path.join(tmpdir, "repo")
+
+        try:
+            git_path = shutil.which("git") or "git"
+            result = subprocess.run(
+                [git_path, "clone", "--depth", "1", "--", repo_url, clone_to],
+                capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode != 0:
+                return f"❌ Clone failed: {result.stderr[:300]}"
+
+            results = run_scans(clone_to, quick=True)
+            changes = auto_fix.apply_fixes(clone_to, {"scans": results})
+
+            if not changes:
+                return f"✓ No issues to fix in {repo_name}."
+
+            lines = [f"## Applied {len(changes)} fix(es) to {repo_name}\n"]
+            for c in changes:
+                lines.append(f"- **{c['file']}:{c['line']}** — {c['issue']}")
+                lines.append(f"  - Fix: {c['fix']}")
+            return "\n".join(lines)
+        except subprocess.TimeoutExpired:
+            return "❌ Clone timed out"
+        except Exception as e:
+            return f"❌ Error: {str(e)}"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
 
 # ── Scan Engine ───────────────────────────────────────────────────────
 
