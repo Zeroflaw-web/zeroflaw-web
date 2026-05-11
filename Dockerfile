@@ -40,7 +40,7 @@ COPY zeroflaw.py .
 COPY auto_fix.py .
 COPY mcp_server.py .
 COPY app.py .
-COPY setup.py .
+COPY pyproject.toml .
 COPY templates/ templates/
 
 # Install zeroflaw CLI command
