@@ -23,7 +23,13 @@ import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
-import auto_fix
+try:
+    import auto_fix
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    import auto_fix
 
 # ── ANSI colors ──────────────────────────────────────────────────────────
 class C:
