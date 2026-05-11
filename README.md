@@ -47,6 +47,10 @@ zeroflaw scan <path> --npm        # npm audit only
 zeroflaw scan <path> --pip        # pip audit only
 zeroflaw scan <path> --owasp      # OWASP Dependency-Check only
 zeroflaw --help                   # Show help
+
+# Auto-fix
+zeroflaw fix <path> --scan         # Scan and auto-fix issues in one go
+zeroflaw fix <path> --results <file>  # Apply fixes from saved results JSON
 ```
 
 ## Usage

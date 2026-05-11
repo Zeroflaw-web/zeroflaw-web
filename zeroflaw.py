@@ -11,6 +11,8 @@ Usage:
     zeroflaw scan <path> --pip        Run only pip audit
     zeroflaw scan <path> --owasp      Run only OWASP Dependency-Check
     zeroflaw scan <path> --quick      Skip Semgrep and OWASP (faster)
+    zeroflaw fix <path> --scan        Scan and auto-fix issues
+    zeroflaw fix <path> --results <file>  Apply fixes from saved results
     zeroflaw --help                   Show this help
 """
 
@@ -21,6 +23,7 @@ import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
+import auto_fix
 
 # ── ANSI colors ──────────────────────────────────────────────────────────
 class C:
@@ -835,6 +838,8 @@ def run_scan(target_path, args):
     if args.report:
         generate_report(all_results)
 
+    return all_results
+
 
 # ── CLI entry point ──────────────────────────────────────────────────────
 
@@ -870,6 +875,12 @@ def main():
     scan_parser.add_argument("--trivy", action="store_true", help="Run Trivy dependency scan (cross-platform, fast)")
     scan_parser.add_argument("--report", action="store_true", help="Generate comprehensive report (requires DEEPSEEK_API_KEY)")
 
+    # fix command
+    fix_parser = subparsers.add_parser("fix", help="Apply automated fixes to scanned project")
+    fix_parser.add_argument("target", help="Directory containing scan results (or project to scan and fix)")
+    fix_parser.add_argument("--results", type=str, default="", help="Path to results JSON (from scan --output)")
+    fix_parser.add_argument("--scan", action="store_true", help="Run scan first before fixing")
+
     args = parser.parse_args()
 
     if args.version:
@@ -898,6 +909,39 @@ def main():
             args.all = True
 
         run_scan(args.target, args)
+    elif args.command == "fix":
+        target = args.target
+        results = None
+        results_file = "zeroflaw_results_temp.json"
+
+        if args.results:
+            with open(args.results, "r") as f:
+                results = json.load(f)
+        elif args.scan:
+            print(f"{C.yellow('→')} Running scan first...")
+            scan_args = argparse.Namespace(
+                target=target,
+                all=False, bandit=True, ruff=True, semgrep=False,
+                npm=False, pip=False, owasp=False, quick=False,
+                trivy=True, output=results_file, report=False
+            )
+            run_scan(target, scan_args)
+            with open(results_file, "r") as f:
+                results = json.load(f)
+            try:
+                os.remove(results_file)
+            except:
+                pass
+        else:
+            print(f"{C.red('✗')} No results provided. Use --results <file> or --scan")
+            sys.exit(1)
+
+        if results:
+            changes = auto_fix.apply_fixes(target, results)
+            print(f"\n{C.bold(f'Applied {len(changes)} fix(es):')}")
+            for c in changes:
+                print(f"  {C.cyan(c['file'])}:{c['line']} — {c['issue']}")
+                print(f"    {C.green('→')} {c['fix']}")
     else:
         parser.print_help()
         sys.exit(1)

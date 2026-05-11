@@ -1,0 +1,8 @@
+README.md
+setup.py
+zeroflaw.py
+zeroflaw.egg-info/PKG-INFO
+zeroflaw.egg-info/SOURCES.txt
+zeroflaw.egg-info/dependency_links.txt
+zeroflaw.egg-info/entry_points.txt
+zeroflaw.egg-info/top_level.txt
