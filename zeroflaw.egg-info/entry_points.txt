@@ -1,2 +1,0 @@
-[console_scripts]
-zeroflaw = zeroflaw:main
