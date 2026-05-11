@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -90,13 +91,14 @@ def error_page(title: str, body: str = "", status_code: int = 400) -> HTMLRespon
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 UPLOAD_DIR = BASE_DIR / "uploads"
-REPORTS_DIR = BASE_DIR / "reports"
 SCANNER_DIR = BASE_DIR
 
 TEMP_SCANS_DIR = BASE_DIR / "temp_scans"
 TEMP_SCANS_DIR.mkdir(exist_ok=True)
 
 sys.path.insert(0, str(SCANNER_DIR))
+
+import b2_store
 
 from server import (
     run_security_scan,
@@ -126,7 +128,6 @@ async def limit_upload_size(request: Request, call_next):
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 UPLOAD_DIR.mkdir(exist_ok=True)
-REPORTS_DIR.mkdir(exist_ok=True)
 
 # ── Provider auto-detection ──────────────────────────────────────────
 
@@ -899,51 +900,47 @@ async def scan_project_stream(project_path: str, target_name: str):
 # Avoids Render's 60s response timeout: POST returns immediately with
 # a redirect to a progress page; the scan runs in the background.
 
-import time
-scan_store: dict[str, dict] = {}
-SCAN_TTL = 3600  # clean scans older than 1h
-
-# Background cleanup of expired scans
-async def _cleanup_expired_scans():
-    while True:
-        await asyncio.sleep(600)
-        now = time.time()
-        expired = [k for k, v in scan_store.items() if now - v.get("created_at", 0) > SCAN_TTL]
-        for k in expired:
-            entry = scan_store.pop(k, None)
-            if entry and entry.get("tmpdir"):
-                shutil.rmtree(entry["tmpdir"], ignore_errors=True)
-
-
-@app.on_event("startup")
-async def _start_cleanup():
-    asyncio.create_task(_cleanup_expired_scans())
-
-
 async def _run_scan_background(
     scan_id: str, project_path: str, target_name: str,
     api_key: str, provider: str,
 ):
-    """Run scan in background and store results in scan_store.
+    """Run scan in background and persist results to B2.
     
-    Updates scan_store steps in real-time so the progress page
-    sees each step as it happens, rather than all at once after
-    the scan finishes.
+    Updates steps in real-time so the progress page sees each step
+    as it happens, rather than all at once after the scan finishes.
     """
+    try:
+        b2_store.put(scan_id, {
+            "status": "scanning", "target": target_name,
+            "created_at": time.time(), "steps": [],
+        })
+    except Exception:
+        pass
+
     try:
         results = None
         async for event in scan_project_stream(project_path, target_name):
             if event.startswith("data: "):
                 data = json.loads(event[6:].strip())
-                steps = scan_store[scan_id].get("steps", [])
+                entry = b2_store.get(scan_id) or {}
+                steps = entry.get("steps", [])
                 steps.append(data)
-                scan_store[scan_id]["steps"] = steps
+                entry["steps"] = steps
+                try:
+                    b2_store.put(scan_id, entry)
+                except Exception:
+                    pass
                 if data.get("type") == "done":
                     results = data["results"]
 
         if not results:
-            scan_store[scan_id]["status"] = "error"
-            scan_store[scan_id]["error"] = "Scan produced no results"
+            entry = b2_store.get(scan_id) or {}
+            entry["status"] = "error"
+            entry["error"] = "Scan produced no results"
+            try:
+                b2_store.put(scan_id, entry)
+            except Exception:
+                pass
             return
 
         ai_summary, provider_name = await generate_ai_report_summary(
@@ -952,46 +949,46 @@ async def _run_scan_background(
 
         report = generate_html_report(target_name, results, ai_summary, provider_name)
 
-        # Add download buttons (must happen before creating download_report)
         download_btns = f'<div class="meta-row"><a href="/download/{scan_id}?format=html" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
         report = report.replace('<div class="meta-row">', download_btns, 1)
 
-        report_path = REPORTS_DIR / f"{scan_id}.html"
-        report_path.write_text(report, encoding="utf-8")
+        b2_store.put_text(f"reports/{scan_id}.html", report, "text/html")
 
-        # Save download version (no back button)
         download_report = report.replace(
             '<div class="back-row">',
             '<div class="back-row" style="display:none">',
             1,
         )
-        download_path = REPORTS_DIR / f"{scan_id}-download.html"
-        download_path.write_text(download_report, encoding="utf-8")
+        b2_store.put_text(f"reports/{scan_id}-download.html", download_report, "text/html")
 
         pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
         if pdf_bytes:
-            pdf_path = REPORTS_DIR / f"{scan_id}.pdf"
-            pdf_path.write_bytes(pdf_bytes)
+            b2_store.put_file(f"reports/{scan_id}.pdf", pdf_bytes, "application/pdf")
 
-        # Save project source alongside report so Fix & Download works later
-        source_dir = REPORTS_DIR / scan_id / "source"
-        source_dir.mkdir(parents=True, exist_ok=True)
+        source_dir = os.path.join(BASE_DIR, "temp_scans", scan_id, "source")
+        os.makedirs(source_dir, exist_ok=True)
         for item in os.listdir(project_path):
             src = os.path.join(project_path, item)
-            dst = os.path.join(str(source_dir), item)
+            dst = os.path.join(source_dir, item)
             if os.path.isdir(src):
                 shutil.copytree(src, dst, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
             else:
                 shutil.copy2(src, dst)
-        scan_store[scan_id]["project_dir"] = str(source_dir)
 
-        scan_store[scan_id]["status"] = "done"
-        scan_store[scan_id]["report_html"] = report
-        scan_store[scan_id]["results"] = results
+        entry = b2_store.get(scan_id) or {}
+        entry["status"] = "done"
+        entry["results"] = results
+        entry["project_dir"] = source_dir
+        b2_store.put(scan_id, entry)
 
     except Exception as e:
-        scan_store[scan_id]["status"] = "error"
-        scan_store[scan_id]["error"] = str(e)
+        entry = b2_store.get(scan_id) or {}
+        entry["status"] = "error"
+        entry["error"] = str(e)
+        try:
+            b2_store.put(scan_id, entry)
+        except Exception:
+            pass
         print(f"Background scan {scan_id} failed: {e}", file=sys.stderr)
 
 
@@ -1028,11 +1025,14 @@ async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), pro
         with open(file_path, "wb") as f:
             f.write(content)
 
-    scan_store[scan_id] = {
-        "status": "scanning", "type": "upload",
-        "target": target_name, "created_at": time.time(),
-        "tmpdir": tmpdir,
-    }
+    try:
+        b2_store.put(scan_id, {
+            "status": "scanning", "type": "upload",
+            "target": target_name, "created_at": time.time(),
+            "tmpdir": tmpdir,
+        })
+    except Exception:
+        pass
 
     asyncio.create_task(_run_scan_background(scan_id, extract_to, target_name, api_key, provider))
 
@@ -1074,11 +1074,14 @@ async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider:
         shutil.rmtree(tmpdir, ignore_errors=True)
         return error_page("Clone timed out", "<p>The repository clone operation exceeded the time limit.</p><a href='/'>← Try Again</a>", 400)
 
-    scan_store[scan_id] = {
-        "status": "scanning", "type": "url",
-        "target": repo_name, "created_at": time.time(),
-        "tmpdir": tmpdir,
-    }
+    try:
+        b2_store.put(scan_id, {
+            "status": "scanning", "type": "url",
+            "target": repo_name, "created_at": time.time(),
+            "tmpdir": tmpdir,
+        })
+    except Exception:
+        pass
 
     asyncio.create_task(_run_scan_background(scan_id, clone_to, repo_name, api_key, provider))
 
@@ -1185,7 +1188,7 @@ poll();
 @app.get("/progress/{scan_id}", response_class=HTMLResponse)
 async def scan_progress(scan_id: str):
     """Show auto-refreshing progress page, redirect to report when done."""
-    entry = scan_store.get(scan_id)
+    entry = b2_store.get(scan_id)
     if not entry:
         return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
     if entry["status"] == "done":
@@ -1202,7 +1205,7 @@ async def scan_progress(scan_id: str):
 @app.get("/scan/status/{scan_id}")
 async def scan_status(scan_id: str):
     """JSON endpoint for progress page polling."""
-    entry = scan_store.get(scan_id)
+    entry = b2_store.get(scan_id)
     if not entry:
         return JSONResponse({"status": "not_found"})
     resp = {"status": entry["status"], "target": entry.get("target", "")}
@@ -1232,8 +1235,8 @@ async def scan_json(file: UploadFile = File(...)):
 
 @app.get("/fix/run/{scan_id}")
 async def fix_run(scan_id: str):
-    """Run auto-fix on an already-scanned project and download the fixed zip."""
-    entry = scan_store.get(scan_id)
+    """Run auto-fix on an already-scanned project and upload fixed zip to B2."""
+    entry = b2_store.get(scan_id)
     if not entry:
         return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
 
@@ -1242,8 +1245,8 @@ async def fix_run(scan_id: str):
     if not project_path or not os.path.isdir(project_path):
         project_path = entry.get("project_dir")
     if not project_path or not os.path.isdir(project_path):
-        fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
-        if fixed_zip_path.exists():
+        existing = b2_store.get_file(f"reports/{scan_id}-fixed.zip")
+        if existing:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
         return error_page("Source expired", "<p>The scanned project directory has been cleaned up. Rescan the project to apply fixes.</p><a href='/'>← Home</a>", 400)
@@ -1268,8 +1271,14 @@ async def fix_run(scan_id: str):
   a:hover{{background:#1bb3cc}}
 </style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable security patterns were detected in this project.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""", status_code=200)
 
-    fixed_zip_path = REPORTS_DIR / f"{scan_id}-fixed.zip"
-    auto_fix.create_fixed_zip(project_path, str(fixed_zip_path))
+    import tempfile as _tmp
+    with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
+        tmp_zip_path = tmp_zip.name
+    auto_fix.create_fixed_zip(project_path, tmp_zip_path)
+    with open(tmp_zip_path, "rb") as f:
+        zip_data = f.read()
+    os.unlink(tmp_zip_path)
+    b2_store.put_file(f"reports/{scan_id}-fixed.zip", zip_data, "application/zip")
 
     fix_rows = ""
     for c in changes:
@@ -1395,33 +1404,37 @@ app.mount("/mcp", _mcp_app)
 
 @app.get("/download/{report_id}")
 async def download_report(report_id: str, format: str = "html"):
-    """Serve a saved report for download. Supports html, pdf, and zip formats."""
-    entry = scan_store.get(report_id)
+    """Serve a saved report from B2. Supports html, pdf, and zip formats."""
+    entry = b2_store.get(report_id)
     if format == "pdf":
-        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
-        if pdf_path.exists():
+        pdf_data = b2_store.get_file(f"reports/{report_id}.pdf")
+        if pdf_data:
             target_name = (entry.get("target", "project") if entry else "project").replace(".zip", "")
             safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in target_name)
-            from fastapi.responses import FileResponse
-            return FileResponse(str(pdf_path), media_type="application/pdf", filename=f"{safe_name}-report.pdf")
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                io.BytesIO(pdf_data),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}-report.pdf"'},
+            )
     if format == "zip":
-        entry = scan_store.get(report_id)
-        zip_path = REPORTS_DIR / f"{report_id}-fixed.zip"
-        if zip_path.exists():
+        zip_data = b2_store.get_file(f"reports/{report_id}-fixed.zip")
+        if zip_data:
             target_name = (entry.get("target", "project") if entry else "project").replace(".zip", "")
             safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in target_name)
-            zip_name = f"{safe_name}-fixed.zip"
-            from fastapi.responses import FileResponse
-            return FileResponse(str(zip_path), media_type="application/zip", filename=zip_name)
-    download_path = REPORTS_DIR / f"{report_id}-download.html"
-    if download_path.exists():
-        content = download_path.read_text(encoding="utf-8")
-        return HTMLResponse(content=content)
-    report_path = REPORTS_DIR / f"{report_id}.html"
-    if not report_path.exists():
-        return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)
-    content = report_path.read_text(encoding="utf-8")
-    return HTMLResponse(content=content)
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                io.BytesIO(zip_data),
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}-fixed.zip"'},
+            )
+    download_html = b2_store.get_text(f"reports/{report_id}-download.html")
+    if download_html:
+        return HTMLResponse(content=download_html)
+    view_html = b2_store.get_text(f"reports/{report_id}.html")
+    if view_html:
+        return HTMLResponse(content=view_html)
+    return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)
 
 
 @app.get("/health")

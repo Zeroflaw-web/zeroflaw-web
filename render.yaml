@@ -16,3 +16,16 @@ services:
         value: "true"
       - key: DEEPSEEK_API_KEY
         sync: false
+      - key: B2_APPLICATION_KEY_ID
+        sync: false
+      - key: B2_APPLICATION_KEY
+        sync: false
+      - key: B2_BUCKET
+        value: zeroflaw-scans
+
+cronjobs:
+  - name: keep-alive
+    schedule: "*/15 * * * *"
+    command: "curl -sf https://zeroflaw-web.onrender.com/health || true"
+    regions:
+      - oregon

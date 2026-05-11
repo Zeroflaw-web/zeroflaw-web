@@ -12,6 +12,7 @@ ZeroFlaw Web is a multi-language security scanner web application. Upload a ZIP 
 - **Frontend:** Single-page app with vanilla JS, CSS animations, Server-Sent Events for streaming terminal output
 - **Scanning:** Bandit, Ruff, Semgrep, Trivy, npm audit, pip audit
 - **AI:** OpenAI-compatible API (auto-detects provider from key prefix)
+- **Storage:** Backblaze B2 (S3-compatible) — scan metadata and reports persist across Render cold starts
 - **Deployment:** Docker, Render, supports Vercel via MCP server
 - **MCP:** Model Context Protocol server for Claude Desktop integration
 
@@ -161,9 +162,13 @@ Custom exclusions via `.scannerignore` file in project root (similar to `.gitign
 
 ## Deployment Notes
 
-- **Render**: Uses `render.yaml` blueprint; health check at `/health`
+- **Render**: Uses `render.yaml` blueprint; health check at `/health`; cron job pings every 15 min to prevent sleep
+- **Backblaze B2 Storage**: Set `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, and `B2_BUCKET` env vars in Render dashboard (no credit card required; 10 GB free forever)
+  1. Sign up at backblaze.com (no credit card)
+  2. Create a bucket named `zeroflaw-scans` (or your preferred name)
+  3. Create an application key with read/write access
+  4. Copy key ID and key into Render env vars
 - **Docker**: Installs all security tools in image; runs uvicorn on port 8555
-- **Vercel**: Not directly supported (requires Linux containers for scanning tools), but MCP server could run as separate service
 
 ## Security Considerations
 

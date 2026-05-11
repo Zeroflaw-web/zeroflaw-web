@@ -39,6 +39,7 @@ COPY server.py .
 COPY zeroflaw.py .
 COPY auto_fix.py .
 COPY mcp_server.py .
+COPY b2_store.py .
 COPY app.py .
 COPY pyproject.toml .
 COPY templates/ templates/
