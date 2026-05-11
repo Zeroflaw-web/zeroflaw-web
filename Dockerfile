@@ -43,8 +43,8 @@ COPY app.py .
 COPY pyproject.toml .
 COPY templates/ templates/
 
-# Install zeroflaw CLI command
-RUN pip install -e .
+# Install zeroflaw CLI command (non-fatal, web app works without it)
+RUN pip install -e . || echo "Warning: CLI install failed, continuing..."
 
 # Create uploads directory
 RUN mkdir -p uploads
