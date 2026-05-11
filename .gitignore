@@ -3,5 +3,8 @@ __pycache__/
 uploads/
 reports/
 .graphify*
+graphify-out/
+CLAUDE.md
+AGENTS.md
 .env
 .env.example

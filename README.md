@@ -17,6 +17,7 @@ Multi-language security scanner web app with AI-powered reports. Upload a ZIP or
 | 🌐 **Animated Terminal** | Real-time scan progress with typewriter-style output |
 | 📊 **Beautiful Reports** | Dark-themed HTML reports with severity cards |
 | ⬇ **Download Reports** | Save AI-enhanced reports as standalone HTML files |
+| 🔧 **Auto-Fix** | Apply auto-fixable security issues and download the patched source |
 | 🐳 **Docker Ready** | Single `docker run` to get started |
 
 ## Quick Start
@@ -145,8 +146,20 @@ See the `zeroflaw.py` file for details.
 - **Backend:** Python + FastAPI + httpx
 - **Frontend:** Server-rendered HTML + vanilla JS + CSS animations
 - **Scanning:** Bandit, Ruff, Semgrep, Trivy, npm/pip audit
+- **Storage:** Backblaze B2 (S3-compatible, scan results persist across Render cold starts)
 - **Container:** Docker (Python 3.11-slim)
 - **AI:** OpenAI-compatible API (auto-detects provider from key prefix)
+
+## Deployment
+
+### Render (recommended)
+
+1. Fork or push to GitHub, connect to Render
+2. Create a **Backblaze B2** bucket (no credit card required, 10 GB free)
+3. Set these env vars in Render dashboard:
+   - `B2_APPLICATION_KEY_ID` and `B2_APPLICATION_KEY` — from B2 App Keys
+   - `B2_BUCKET` — your bucket name (e.g. `zeroflaw-scans`)
+4. Render's cron job pings `/health` every 15 min to prevent sleep
 
 ## Security
 
