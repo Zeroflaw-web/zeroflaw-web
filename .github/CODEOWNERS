@@ -1,0 +1,12 @@
+# Global owners for all files
+* @lokesh-kashyap3440
+
+# Security-critical files require explicit review
+SECURITY.md @lokesh-kashyap3440
+Dockerfile @lokesh-kashyap3440
+server.py @lokesh-kashyap3440
+app.py @lokesh-kashyap3440
+zeroflaw.py @lokesh-kashyap3440
+mcp_server.py @lokesh-kashyap3440
+requirements.txt @lokesh-kashyap3440
+pyproject.toml @lokesh-kashyap3440
