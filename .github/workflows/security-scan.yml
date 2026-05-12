@@ -18,7 +18,7 @@ jobs:
           python-version: "3.11"
       - run: pip install bandit
       - run: bandit -r . -x __pycache__,uploads,templates -f json -o bandit-report.json || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bandit-report
