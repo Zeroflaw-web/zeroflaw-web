@@ -936,8 +936,8 @@ def main():
                 results = json.load(f)
             try:
                 os.remove(results_file)
-            except Exception:
-                pass  # temp file cleanup is best-effort
+            except OSError:
+                pass  # Best-effort cleanup of temporary results file; ignore deletion failures.
         else:
             print(f"{C.red('✗')} No results provided. Use --results <file> or --scan")
             sys.exit(1)
