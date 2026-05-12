@@ -961,18 +961,25 @@ async def _run_scan_background(
         download_btns = f'<div class="meta-row"><a href="/download/{scan_id}?format=html" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
         report = report.replace('<div class="meta-row">', download_btns, 1)
 
-        b2_store.put_text(f"reports/{scan_id}.html", report, "text/html")
-
-        download_report = report.replace(
-            '<div class="back-row">',
-            '<div class="back-row" style="display:none">',
-            1,
-        )
-        b2_store.put_text(f"reports/{scan_id}-download.html", download_report, "text/html")
-
-        pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
-        if pdf_bytes:
-            b2_store.put_file(f"reports/{scan_id}.pdf", pdf_bytes, "application/pdf")
+        try:
+            b2_store.put_text(f"reports/{scan_id}.html", report, "text/html")
+        except Exception:
+            pass
+        try:
+            download_report = report.replace(
+                '<div class="back-row">',
+                '<div class="back-row" style="display:none">',
+                1,
+            )
+            b2_store.put_text(f"reports/{scan_id}-download.html", download_report, "text/html")
+        except Exception:
+            pass
+        try:
+            pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
+            if pdf_bytes:
+                b2_store.put_file(f"reports/{scan_id}.pdf", pdf_bytes, "application/pdf")
+        except Exception:
+            pass
 
         source_dir = ""
         try:
