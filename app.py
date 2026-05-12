@@ -1457,6 +1457,11 @@ async def download_report(report_id: str, format: str = "html"):
     view_html = b2_store.get_text(f"reports/{report_id}.html")
     if view_html:
         return HTMLResponse(content=view_html)
+    if entry:
+        for step in entry.get("steps", []):
+            if step.get("type") == "done" and step.get("results"):
+                report = generate_html_report(entry.get("target", "project"), step["results"])
+                return HTMLResponse(content=report)
     return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)
 
 
