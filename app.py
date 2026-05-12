@@ -848,6 +848,7 @@ async def scan_project_stream(project_path: str, target_name: str):
         (r'(?i)redis://[^:]+:[^@]+@', "Redis URL with Password"),
         (r'https://[^:]+:[^@]+@github\.com', "GitHub URL with Token"),
     ]
+    scan_errors = []
     for root, dirs, files in os.walk(project_path):
         # Skip venv, node_modules, .git
         dirs[:] = [d for d in dirs if d not in (".venv", "venv", "node_modules", ".git", "__pycache__")]
@@ -868,11 +869,11 @@ async def scan_project_stream(project_path: str, target_name: str):
                             "message": label,
                             "match": match.group(0)[:40] + "...",
                         })
-            except Exception:
-                pass
+            except Exception as e:
+                scan_errors.append({"file": fpath, "error": str(e)[:100]})
 
     secret_count = len(secret_findings)
-    results["scans"]["secrets"] = {"results": secret_findings, "count": secret_count}
+    results["scans"]["secrets"] = {"results": secret_findings, "count": secret_count, "scan_errors": scan_errors}
     yield f"data: {json.dumps({'type':'warn' if secret_count > 0 else 'ok','text':f'🔑 Secrets — {secret_count} potential secret(s) found'})}\n\n"
     
     # Additional security tools
