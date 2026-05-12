@@ -1468,6 +1468,8 @@ async def download_report(report_id: str, format: str = "html"):
         for step in entry.get("steps", []):
             if step.get("type") == "done" and step.get("results"):
                 report = generate_html_report(entry.get("target", "project"), step["results"])
+                btns = f'<div class="meta-row"><a href="/download/{report_id}?format=html" class="download-btn" download>⬇ Download HTML</a><a href="/download/{report_id}?format=pdf" class="download-btn pdf" download>📄 Download PDF</a><a href="/fix/run/{report_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">🔧 Fix &amp; Download</a>'
+                report = report.replace('<div class="meta-row">', btns, 1)
                 return HTMLResponse(content=report)
     return error_page("Report not found", "<p>This report has expired or doesn't exist.</p><a href='/'>← Home</a>", 404)
 
