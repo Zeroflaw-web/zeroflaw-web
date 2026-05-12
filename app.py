@@ -995,14 +995,15 @@ async def _run_scan_background(
         except Exception:
             pass
         try:
-            if source_dir:
-                zip_buf = io.BytesIO()
-                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for root, dirs, files in os.walk(source_dir):
-                        for fn in files:
-                            path = os.path.join(root, fn)
-                            zf.write(path, os.path.relpath(path, source_dir))
-                b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
+            zip_buf = io.BytesIO()
+            _skip = {".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist", ".ruff_cache", ".bandit_cache", ".semgrep_logs", ".mypy_cache", ".pytest_cache", "__pycache__"}
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(project_path):
+                    dirs[:] = [d for d in dirs if d not in _skip]
+                    for fn in files:
+                        path = os.path.join(root, fn)
+                        zf.write(path, os.path.relpath(path, project_path))
+            b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
         except Exception:
             pass
 
