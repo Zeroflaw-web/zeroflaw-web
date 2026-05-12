@@ -949,31 +949,34 @@ async def _run_scan_background(
             try:
                 b2_store.put(scan_id, entry)
             except Exception:
-                pass  # best-effort persistence; error state already set
+                pass
             return
 
-        ai_summary, provider_name = await generate_ai_report_summary(
-            api_key, target_name, results, provider
-        )
-
-        report = generate_html_report(target_name, results, ai_summary, provider_name)
-
-        download_btns = f'<div class="meta-row"><a href="/download/{scan_id}?format=html" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
-        report = report.replace('<div class="meta-row">', download_btns, 1)
-
+        # Mark done immediately so progress page redirects right away
+        entry = b2_store.get(scan_id) or {}
+        entry["status"] = "done"
+        entry["results"] = results
         try:
-            b2_store.put_text(f"reports/{scan_id}.html", report, "text/html")
+            b2_store.put(scan_id, entry)
         except Exception:
             pass
+
+        # Everything below is best-effort — failures won't block the report
         try:
-            download_report = report.replace(
-                '<div class="back-row">',
-                '<div class="back-row" style="display:none">',
-                1,
-            )
+            ai_summary, provider_name = await generate_ai_report_summary(api_key, target_name, results, provider)
+        except Exception:
+            ai_summary, provider_name = "", ""
+
+        try:
+            report = generate_html_report(target_name, results, ai_summary, provider_name)
+            btns = f'<div class="meta-row"><a href="/download/{scan_id}?format=html" class="download-btn" download>\u2b07 Download HTML</a><a href="/download/{scan_id}?format=pdf" class="download-btn" download>\U0001f4c4 Download PDF</a><a href="/fix/run/{scan_id}" class="download-btn" style="background:rgba(34,211,238,0.15);border:1px solid rgba(34,211,238,0.3);">\U0001f527 Fix &amp; Download</a>'
+            report = report.replace('<div class="meta-row">', btns, 1)
+            b2_store.put_text(f"reports/{scan_id}.html", report, "text/html")
+            download_report = report.replace('<div class="back-row">', '<div class="back-row" style="display:none">', 1)
             b2_store.put_text(f"reports/{scan_id}-download.html", download_report, "text/html")
         except Exception:
             pass
+
         try:
             pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
             if pdf_bytes:
@@ -981,19 +984,6 @@ async def _run_scan_background(
         except Exception:
             pass
 
-        source_dir = ""
-        try:
-            source_dir = os.path.join(BASE_DIR, "temp_scans", scan_id, "source")
-            os.makedirs(source_dir, exist_ok=True)
-            for item in os.listdir(project_path):
-                src = os.path.join(project_path, item)
-                dst = os.path.join(source_dir, item)
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
-                else:
-                    shutil.copy2(src, dst)
-        except Exception:
-            pass
         try:
             zip_buf = io.BytesIO()
             _skip = {".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist", ".ruff_cache", ".bandit_cache", ".semgrep_logs", ".mypy_cache", ".pytest_cache", "__pycache__"}
@@ -1006,13 +996,6 @@ async def _run_scan_background(
             b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
         except Exception:
             pass
-
-        entry = b2_store.get(scan_id) or {}
-        entry["status"] = "done"
-        entry["results"] = results
-        if source_dir:
-            entry["project_dir"] = source_dir
-        b2_store.put(scan_id, entry)
 
     except Exception as e:
         entry = b2_store.get(scan_id) or {}
