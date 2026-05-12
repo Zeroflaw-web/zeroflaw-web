@@ -301,7 +301,7 @@ def run_trivy(path: str) -> dict:
         return {"error": "Trivy not installed"}
     try:
         result = subprocess.run(
-            [trivy, "fs", "--format", "json", "--quiet", "--", path],
+            [trivy, "fs", "--format", "json", "--quiet", "--skip-db-update", "--", path],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode not in (0, 1):
