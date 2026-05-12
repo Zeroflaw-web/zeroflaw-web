@@ -1025,6 +1025,75 @@ async def _run_scan_background(
         print(f"Background scan {scan_id} failed: {e}", file=sys.stderr)
 
 
+# ── Background fix ──────────────────────────────────────────────────────
+
+async def _run_fix_background(scan_id: str, entry: dict):
+    """Run auto-fix in background and store results in B2."""
+    import tempfile as _tmp
+    try:
+        project_path = entry.get("project_dir", "")
+        if not project_path or not os.path.isdir(project_path):
+            source_zip = b2_store.get_file(f"reports/{scan_id}-source.zip")
+            if not source_zip:
+                upd = b2_store.get(scan_id) or {}
+                upd["status"] = "error"
+                upd["error"] = "Source not available"
+                b2_store.put(scan_id, upd)
+                return
+            tmpdir = _tmp.mkdtemp(prefix="zeroflaw_fix_")
+            with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+                f.write(source_zip)
+                zippath = f.name
+            with zipfile.ZipFile(zippath, "r") as zf:
+                zf.extractall(tmpdir)
+            os.unlink(zippath)
+            project_path = tmpdir
+
+        results = entry.get("results")
+        if not results and entry.get("steps"):
+            for s in entry["steps"]:
+                if s.get("type") == "done" and s.get("results"):
+                    results = s["results"]
+                    break
+        if not results:
+            upd = b2_store.get(scan_id) or {}
+            upd["status"] = "error"
+            upd["error"] = "No results found"
+            b2_store.put(scan_id, upd)
+            return
+
+        changes = auto_fix.apply_fixes(project_path, results)
+        if not changes:
+            b2_store.put_text(f"reports/{scan_id}-fix-result.html", f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>No Fixable Issues</title><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}}.card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:520px;width:100%;text-align:center}}h2{{color:#3fb950;font-size:20px;margin-bottom:12px}}p{{color:#94a3b8;font-size:14px;margin-bottom:16px}}a{{display:inline-block;padding:10px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600}}</style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable security patterns were detected.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""")
+            upd = b2_store.get(scan_id) or {}
+            upd["status"] = "done_fix"
+            upd["fix_count"] = 0
+            b2_store.put(scan_id, upd)
+            return
+
+        with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
+            tmp_zip_path = tmp_zip.name
+        auto_fix.create_fixed_zip(project_path, tmp_zip_path)
+        with open(tmp_zip_path, "rb") as f:
+            zip_data = f.read()
+        os.unlink(tmp_zip_path)
+        b2_store.put_file(f"reports/{scan_id}-fixed.zip", zip_data, "application/zip")
+
+        fix_rows = ""
+        for c in changes:
+            fix_rows += f"""<tr><td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#22d4ee;">🔧</td><td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">{c['file']}:{c['line']}</td><td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#94a3b8;">{c['issue'][:80]}</td><td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#3fb950;">{c['fix']}</td></tr>"""
+
+        b2_store.put_text(f"reports/{scan_id}-fix-result.html", f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Fixes Applied</title><style>*{{margin:0;padding:0;box-sizing:border-box}}body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}.card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:640px;width:100%}}h2{{color:#22d4ee;font-size:20px;margin-bottom:4px;display:flex;align-items:center;gap:8px}}.subtitle{{color:#64748b;font-size:13px;margin-bottom:20px}}table{{width:100%;border-collapse:collapse;margin-bottom:20px}}th{{text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.1);text-transform:uppercase;letter-spacing:1px}}.btn{{display:inline-block;padding:12px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px}}.btn-sec{{display:inline-block;padding:12px 24px;background:rgba(255,255,255,0.05);color:#e2e8f0;border:1px solid rgba(255,255,255,0.08);border-radius:10px;text-decoration:none;font-size:14px}}</style></head><body><div class="card"><h2>🛠 Fixes Applied ({len(changes)})</h2><p class="subtitle">The following changes were made to your project:</p><table><tr><th></th><th>Location</th><th>Issue</th><th>Fix</th></tr>{fix_rows}</table><div><a href="/download/{scan_id}?format=zip" class="btn" download>⬇ Download Fixed Source (.zip)</a><a href="/download/{scan_id}" class="btn-sec">← Back to Report</a></div></div></body></html>""")
+        upd = b2_store.get(scan_id) or {}
+        upd["status"] = "done_fix"
+        upd["fix_count"] = len(changes)
+        b2_store.put(scan_id, upd)
+    except Exception as e:
+        upd = b2_store.get(scan_id) or {}
+        upd["status"] = "error"
+        upd["error"] = str(e)
+        b2_store.put(scan_id, upd)
+
 # ── Routes ──────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -1231,9 +1300,20 @@ async def scan_progress(scan_id: str):
     if status == "done":
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=f"/download/{scan_id}", status_code=302)
+    if status == "done_fix":
+        fix_html = b2_store.get_text(f"reports/{scan_id}-fix-result.html")
+        if fix_html:
+            return HTMLResponse(content=fix_html)
+        return HTMLResponse(f"<html><body style='background:#020617;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif'><div style='text-align:center'><h2 style='color:#22d4ee'>✓ {entry.get('fix_count', 0)} Fix(es) Applied</h2><a href='/download/{scan_id}?format=zip' style='color:#22d4ee'>Download Fixed Source</a></div></body></html>")
     if status == "error":
         err = entry.get("error", "Unknown error")
         return error_page("Scan failed", f"<p>{err}</p><a href='/'>← Try Again</a>", 500)
+
+    if status == "fixing":
+        fix_page = PROGRESS_PAGE.replace("{scan_id}", scan_id).replace("{target}", "Fixing " + entry.get("target", "project"))
+        fix_page = fix_page.replace("$ zeroflaw scan", "🔧 Applying fixes...")
+        fix_page = fix_page.replace("Running security scanners", "Running auto-fix on project")
+        return HTMLResponse(content=fix_page)
 
     page = PROGRESS_PAGE.replace("{scan_id}", scan_id).replace("{target}", entry.get("target", "project"))
     return HTMLResponse(content=page)
@@ -1253,6 +1333,8 @@ async def scan_status(scan_id: str):
     resp = {"status": status, "target": entry.get("target", "")}
     if status == "done":
         resp["report_url"] = f"/download/{scan_id}"
+    if status == "done_fix":
+        resp["report_url"] = f"/progress/{scan_id}"
     if status == "error":
         resp["error"] = entry.get("error", "Unknown error")
     if steps:
@@ -1282,58 +1364,15 @@ async def fix_run(scan_id: str):
     if not entry:
         return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
 
-    tmpdir = entry.get("tmpdir")
-    project_path = os.path.join(tmpdir, "project") if tmpdir else None
-    if not project_path or not os.path.isdir(project_path):
-        project_path = entry.get("project_dir")
-    if not project_path or not os.path.isdir(project_path):
-        existing = b2_store.get_file(f"reports/{scan_id}-fixed.zip")
-        if existing:
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
-        source_zip = b2_store.get_file(f"reports/{scan_id}-source.zip")
-        if source_zip:
-            import tempfile as _tmp
-            tmpdir = _tmp.mkdtemp(prefix="zeroflaw_fix_")
-            with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as f:
-                f.write(source_zip)
-                zippath = f.name
-            with zipfile.ZipFile(zippath, "r") as zf:
-                zf.extractall(tmpdir)
-            os.unlink(zippath)
-            project_path = tmpdir
-            entry["project_dir"] = tmpdir
-        else:
-            return error_page("Source expired", "<p>The scanned project directory has been cleaned up. Rescan the project to apply fixes.</p><a href='/'>← Home</a>", 400)
+    existing = b2_store.get_file(f"reports/{scan_id}-fixed.zip")
+    if existing:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
 
-    results = entry.get("results")
-    if not results:
-        return error_page("No results", "<p>The scan produced no results — try scanning again.</p><a href='/'>← Home</a>", 400)
-
-    changes = auto_fix.apply_fixes(project_path, results)
-    if not changes:
-        return HTMLResponse(f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>No Fixable Issues — ZeroFlaw</title>
-<style>
-  *{{margin:0;padding:0;box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}}
-  .card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:520px;width:100%;text-align:center}}
-  h2{{color:#3fb950;font-size:20px;margin-bottom:12px}}
-  p{{color:#94a3b8;font-size:14px;margin-bottom:16px}}
-  a{{display:inline-block;padding:10px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600}}
-  a:hover{{background:#1bb3cc}}
-</style></head><body><div class="card"><h2>✓ No Fixable Issues</h2><p>No auto-fixable security patterns were detected in this project.</p><a href="/download/{scan_id}">← Back to Report</a></div></body></html>""", status_code=200)
-
-    import tempfile as _tmp
-    with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-        tmp_zip_path = tmp_zip.name
-    auto_fix.create_fixed_zip(project_path, tmp_zip_path)
-    with open(tmp_zip_path, "rb") as f:
-        zip_data = f.read()
-    os.unlink(tmp_zip_path)
-    b2_store.put_file(f"reports/{scan_id}-fixed.zip", zip_data, "application/zip")
+    b2_store.put(scan_id, {"status": "fixing", "target": entry.get("target", "project"), "steps": [{"type": "running", "text": "Applying fixes..."}], "created_at": time.time()})
+    asyncio.create_task(_run_fix_background(scan_id, entry))
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
 
     fix_rows = ""
     for c in changes:
