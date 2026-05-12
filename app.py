@@ -993,7 +993,18 @@ async def _run_scan_background(
                 else:
                     shutil.copy2(src, dst)
         except Exception:
-            pass  # best-effort source copy; fix/run will report source expired if unavailable
+            pass
+        try:
+            if source_dir:
+                zip_buf = io.BytesIO()
+                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for root, dirs, files in os.walk(source_dir):
+                        for fn in files:
+                            path = os.path.join(root, fn)
+                            zf.write(path, os.path.relpath(path, source_dir))
+                b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
+        except Exception:
+            pass
 
         entry = b2_store.get(scan_id) or {}
         entry["status"] = "done"
@@ -1279,7 +1290,20 @@ async def fix_run(scan_id: str):
         if existing:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
-        return error_page("Source expired", "<p>The scanned project directory has been cleaned up. Rescan the project to apply fixes.</p><a href='/'>← Home</a>", 400)
+        source_zip = b2_store.get_file(f"reports/{scan_id}-source.zip")
+        if source_zip:
+            import tempfile as _tmp
+            tmpdir = _tmp.mkdtemp(prefix="zeroflaw_fix_")
+            with _tmp.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+                f.write(source_zip)
+                zippath = f.name
+            with zipfile.ZipFile(zippath, "r") as zf:
+                zf.extractall(tmpdir)
+            os.unlink(zippath)
+            project_path = tmpdir
+            entry["project_dir"] = tmpdir
+        else:
+            return error_page("Source expired", "<p>The scanned project directory has been cleaned up. Rescan the project to apply fixes.</p><a href='/'>← Home</a>", 400)
 
     results = entry.get("results")
     if not results:
