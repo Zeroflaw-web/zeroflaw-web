@@ -937,7 +937,7 @@ def main():
             try:
                 os.remove(results_file)
             except Exception:
-                pass
+                pass  # temp file cleanup is best-effort
         else:
             print(f"{C.red('✗')} No results provided. Use --results <file> or --scan")
             sys.exit(1)

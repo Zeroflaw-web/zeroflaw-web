@@ -924,7 +924,7 @@ async def _run_scan_background(
             "created_at": time.time(), "steps": [],
         })
     except Exception:
-        pass
+        pass  # B2 may not be configured; scan proceeds without persistence
 
     try:
         results = None
@@ -938,7 +938,7 @@ async def _run_scan_background(
                 try:
                     b2_store.put(scan_id, entry)
                 except Exception:
-                    pass
+                    pass  # best-effort persistence; stream continues regardless
                 if data.get("type") == "done":
                     results = data["results"]
 
@@ -949,7 +949,7 @@ async def _run_scan_background(
             try:
                 b2_store.put(scan_id, entry)
             except Exception:
-                pass
+                pass  # best-effort persistence; error state already set
             return
 
         ai_summary, provider_name = await generate_ai_report_summary(
@@ -997,7 +997,7 @@ async def _run_scan_background(
         try:
             b2_store.put(scan_id, entry)
         except Exception:
-            pass
+            pass  # best-effort persistence; error already logged above
         print(f"Background scan {scan_id} failed: {e}", file=sys.stderr)
 
 
@@ -1041,7 +1041,7 @@ async def scan_upload(file: UploadFile = File(...), api_key: str = Form(""), pro
             "tmpdir": tmpdir,
         })
     except Exception:
-        pass
+        pass  # B2 may not be configured; scan proceeds without initial metadata
 
     asyncio.create_task(_run_scan_background(scan_id, extract_to, target_name, api_key, provider))
 
@@ -1090,7 +1090,7 @@ async def scan_url(repo_url: str = Form(...), api_key: str = Form(""), provider:
             "tmpdir": tmpdir,
         })
     except Exception:
-        pass
+        pass  # B2 may not be configured; scan proceeds without initial metadata
 
     asyncio.create_task(_run_scan_background(scan_id, clone_to, repo_name, api_key, provider))
 
