@@ -1371,46 +1371,6 @@ async def fix_run(scan_id: str):
 
     b2_store.put(scan_id, {"status": "fixing", "target": entry.get("target", "project"), "steps": [{"type": "running", "text": "Applying fixes..."}], "created_at": time.time()})
     asyncio.create_task(_run_fix_background(scan_id, entry))
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/progress/{scan_id}", status_code=303)
-
-    fix_rows = ""
-    for c in changes:
-        fix_rows += f"""<tr>
-          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#22d4ee;">🔧</td>
-          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;">{c['file']}:{c['line']}</td>
-          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#94a3b8;">{c['issue'][:80]}</td>
-          <td style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;color:#3fb950;">{c['fix']}</td>
-        </tr>"""
-
-    return HTMLResponse(f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Fixes Applied — ZeroFlaw</title>
-<style>
-  *{{margin:0;padding:0;box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}
-  .card{{background:#0F172A;border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:32px;max-width:640px;width:100%}}
-  h2{{color:#22d4ee;font-size:20px;margin-bottom:4px;display:flex;align-items:center;gap:8px}}
-  .subtitle{{color:#64748b;font-size:13px;margin-bottom:20px}}
-  table{{width:100%;border-collapse:collapse;margin-bottom:20px}}
-  th{{text-align:left;color:#64748b;font-size:11px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.1);text-transform:uppercase;letter-spacing:1px}}
-  .btn{{display:inline-block;padding:12px 24px;background:#22d4ee;color:#020617;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px}}
-  .btn:hover{{background:#1bb3cc}}
-  .btn-sec{{display:inline-block;padding:12px 24px;background:rgba(255,255,255,0.05);color:#e2e8f0;border:1px solid rgba(255,255,255,0.08);border-radius:10px;text-decoration:none;font-size:14px}}
-  .btn-sec:hover{{background:rgba(255,255,255,0.08)}}
-</style></head><body><div class="card">
-  <h2>🛠 Fixes Applied ({len(changes)})</h2>
-  <p class="subtitle">The following changes were made to your project:</p>
-  <table>
-    <tr><th></th><th>Location</th><th>Issue</th><th>Fix</th></tr>
-    {fix_rows}
-  </table>
-  <div>
-    <a href="/download/{scan_id}?format=zip" class="btn" download>⬇ Download Fixed Source (.zip)</a>
-    <a href="/download/{scan_id}" class="btn-sec">← Back to Report</a>
-  </div>
-</div></body></html>""", status_code=200)
 
 
 # ── Sync scan helpers (for MCP tools) ────────────────────────────────
