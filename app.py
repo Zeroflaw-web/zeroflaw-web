@@ -974,20 +974,25 @@ async def _run_scan_background(
         if pdf_bytes:
             b2_store.put_file(f"reports/{scan_id}.pdf", pdf_bytes, "application/pdf")
 
-        source_dir = os.path.join(BASE_DIR, "temp_scans", scan_id, "source")
-        os.makedirs(source_dir, exist_ok=True)
-        for item in os.listdir(project_path):
-            src = os.path.join(project_path, item)
-            dst = os.path.join(source_dir, item)
-            if os.path.isdir(src):
-                shutil.copytree(src, dst, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
-            else:
-                shutil.copy2(src, dst)
+        source_dir = ""
+        try:
+            source_dir = os.path.join(BASE_DIR, "temp_scans", scan_id, "source")
+            os.makedirs(source_dir, exist_ok=True)
+            for item in os.listdir(project_path):
+                src = os.path.join(project_path, item)
+                dst = os.path.join(source_dir, item)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, symlinks=False, ignore=lambda s, n: {d for d in n if d in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")})
+                else:
+                    shutil.copy2(src, dst)
+        except Exception:
+            pass  # best-effort source copy; fix/run will report source expired if unavailable
 
         entry = b2_store.get(scan_id) or {}
         entry["status"] = "done"
         entry["results"] = results
-        entry["project_dir"] = source_dir
+        if source_dir:
+            entry["project_dir"] = source_dir
         b2_store.put(scan_id, entry)
 
     except Exception as e:
@@ -1200,10 +1205,14 @@ async def scan_progress(scan_id: str):
     entry = b2_store.get(scan_id)
     if not entry:
         return error_page("Scan not found", "<p>No scan was found with this ID. It may have expired.</p><a href='/'>← Home</a>", 404)
-    if entry["status"] == "done":
+    status = entry["status"]
+    steps = entry.get("steps", [])
+    if status == "scanning" and any(s.get("type") == "done" for s in steps):
+        status = "done"
+    if status == "done":
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=f"/download/{scan_id}", status_code=302)
-    if entry["status"] == "error":
+    if status == "error":
         err = entry.get("error", "Unknown error")
         return error_page("Scan failed", f"<p>{err}</p><a href='/'>← Try Again</a>", 500)
 
@@ -1217,13 +1226,18 @@ async def scan_status(scan_id: str):
     entry = b2_store.get(scan_id)
     if not entry:
         return JSONResponse({"status": "not_found"})
-    resp = {"status": entry["status"], "target": entry.get("target", "")}
-    if entry["status"] == "done":
+    status = entry["status"]
+    steps = entry.get("steps", [])
+    has_done_step = any(s.get("type") == "done" for s in steps)
+    if status == "scanning" and has_done_step:
+        status = "done"
+    resp = {"status": status, "target": entry.get("target", "")}
+    if status == "done":
         resp["report_url"] = f"/download/{scan_id}"
-    if entry["status"] == "error":
+    if status == "error":
         resp["error"] = entry.get("error", "Unknown error")
-    if entry.get("steps"):
-        resp["steps"] = entry["steps"]
+    if steps:
+        resp["steps"] = steps
     return JSONResponse(resp)
 
 
