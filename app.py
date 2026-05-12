@@ -1369,7 +1369,9 @@ async def fix_run(scan_id: str):
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=f"/download/{scan_id}?format=zip", status_code=302)
 
-    b2_store.put(scan_id, {"status": "fixing", "target": entry.get("target", "project"), "steps": [{"type": "running", "text": "Applying fixes..."}], "created_at": time.time()})
+    entry["status"] = "fixing"
+    entry["steps"] = [{"type": "running", "text": "Applying fixes..."}]
+    b2_store.put(scan_id, entry)
     asyncio.create_task(_run_fix_background(scan_id, entry))
 
 
