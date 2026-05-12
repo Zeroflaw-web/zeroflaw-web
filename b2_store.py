@@ -10,7 +10,6 @@ Bucket name is configurable via B2_BUCKET (default: zeroflaw-scans).
 """
 
 import b2sdk.v2 as b2
-import io
 import json
 import logging
 import os

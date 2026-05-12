@@ -152,58 +152,6 @@ def run_owasp_zap_scan(target_path: str) -> Dict[str, Any]:
         
     # Check if ZAP is installed and running
     try:
-        # This would be a placeholder implementation
-        # A full implementation would require:
-        # 1. ZAP API connection
-        # 2. ZAP to be running as a service
-        # 3. Configuration to point to the application being tested
-        
-        return {
-            "results": [],
-            "message": "OWASP ZAP integration is available but requires ZAP to be running as a service. Please start ZAP in daemon mode for full functionality."
-        }
-    except Exception as e:
-        return {"error": f"Error running ZAP scan: {str(e)}"}
-
-
-def run_owasp_zap_scan(target_path: str) -> Dict[str, Any]:
-    """Run OWASP ZAP scan on the target path.
-    
-    This function would integrate with ZAP to perform dynamic application security testing.
-    In a full implementation, this would require:
-    1. ZAP to be running as a service
-    2. A way to point ZAP at the application
-    3. Configuration of scan parameters
-    
-    Args:
-        target_path: The absolute or relative path to the project directory.
-
-    Returns:
-        A dictionary containing the ZAP scan results.
-    """
-    # Check if ZAP is enabled via environment variable
-    zap_enabled = os.environ.get("ZAP_ENABLED", "false").lower() == "true"
-    if not zap_enabled:
-        return {"results": [], "message": "OWASP ZAP scanning is disabled. Set ZAP_ENABLED=true to enable."}
-        
-    # Security validation
-    error = _validate_path_safety(target_path)
-    if error:
-        return {"error": error}
-        
-    resolved = _normalize_path(target_path)
-    
-    if not os.path.exists(resolved):
-        return {"error": f"Path does not exist: {target_path}"}
-        
-    # Check if ZAP is installed and running
-    try:
-        # This would be a placeholder implementation
-        # A full implementation would require:
-        # 1. ZAP API connection
-        # 2. ZAP to be running as a service
-        # 3. Configuration to point to the application being tested
-        
         return {
             "results": [],
             "message": "OWASP ZAP integration is available but requires ZAP to be running as a service. Please start ZAP in daemon mode for full functionality."
@@ -288,7 +236,6 @@ def _should_skip_path(path: str, scannerignore_patterns: list[str]) -> bool:
     patterns loaded from .scannerignore.
     """
     relative = os.path.basename(path)
-    parent_dir = os.path.basename(os.path.dirname(path))
 
     # Check auto-excluded directories (match any component in the path)
     path_parts = path.replace("\\", "/").split("/")
@@ -717,7 +664,6 @@ def scan_npm_dependencies(project_path: str) -> Dict[str, Any]:
             env=env,
         )
         stdout = _sanitize_tool_output(result.stdout.strip())
-        stderr = _sanitize_tool_output(result.stderr.strip())
 
         if not stdout:
             return {

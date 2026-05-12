@@ -26,16 +26,13 @@ Or via stdio (simpler):
 """
 
 import argparse
-import asyncio
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import uuid
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Add parent to path for imports
@@ -89,7 +86,6 @@ SCANNERS_CACHE = {}
 
 
 def register_tools(mcp):
-    from mcp.server.fastmcp import FastMCP
 
     @mcp.tool()
     def scan_health() -> str:
@@ -135,7 +131,7 @@ def register_tools(mcp):
             if result.returncode != 0:
                 err = result.stderr[:300]
                 if "could not read Username" in err or "Authentication failed" in err:
-                    return f"❌ Clone failed — private repo needs a token. Use https://<token>@github.com/user/repo or try scan_directory with a local path."
+                    return "❌ Clone failed — private repo needs a token. Use https://<token>@github.com/user/repo or try scan_directory with a local path."
                 return f"❌ Clone failed: {err}"
 
             results = run_scans(clone_to, quick=True)
@@ -239,7 +235,7 @@ def register_tools(mcp):
 
         if not changes:
             _shutil.rmtree(tmpdir, ignore_errors=True)
-            return f"✓ Scan complete. No auto-fixable issues found."
+            return "✓ Scan complete. No auto-fixable issues found."
 
         lines = [f"## Applied {len(changes)} fix(es) in temp dir: {tmpdir}\n"]
         for c in changes:
@@ -309,7 +305,7 @@ def run_trivy(path: str) -> dict:
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode not in (0, 1):
-            return {"error": f"Trivy failed"}
+            return {"error": "Trivy failed"}
         data = json.loads(result.stdout) if result.stdout.strip() else {"Results": []}
         return data
     except subprocess.TimeoutExpired:
@@ -342,7 +338,6 @@ def run_scans(project_path: str, quick: bool = False) -> dict:
             break
 
     from concurrent.futures import ThreadPoolExecutor, wait as _wait
-    from concurrent.futures import TimeoutError as _TimeoutError
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {}
         # Only run Python scanners if Python files exist
