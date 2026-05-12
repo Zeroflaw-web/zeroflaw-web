@@ -11,19 +11,19 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system deps + Python security tools
-# hadolint ignore=DL3013
+# hadolint ignore=DL3008,DL3013
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git=1:2.39.* \
-    curl=7.88.* \
-    ca-certificates=20230311 \
-    gnupg=2.2.* \
-    nodejs=18.19.* \
-    npm=9.2.* \
-    libpango-1.0-0=1.50.* \
-    libpangocairo-1.0-0=1.50.* \
-    libgdk-pixbuf-2.0-0=2.42.* \
-    libffi-dev=3.4.* \
-    shared-mime-info=2.2.* \
+    git \
+    curl \
+    ca-certificates \
+    gnupg \
+    nodejs \
+    npm \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir bandit ruff semgrep pip-audit
 
@@ -32,7 +32,7 @@ RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/
 
 # Copy requirements and install Python deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY server.py zeroflaw.py auto_fix.py mcp_server.py b2_store.py app.py pyproject.toml ./
@@ -40,7 +40,7 @@ COPY templates/ templates/
 
 # Install zeroflaw CLI command (non-fatal, web app works without it) and create uploads dir
 RUN pip install --no-cache-dir -e . || echo "Warning: CLI install failed, continuing..."
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chmod 777 uploads
 
 # Expose port
 EXPOSE 8555
