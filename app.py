@@ -956,6 +956,7 @@ async def _run_scan_background(
         entry = b2_store.get(scan_id) or {}
         entry["status"] = "done"
         entry["results"] = results
+        entry["project_path"] = project_path
         try:
             b2_store.put(scan_id, entry)
         except Exception:
@@ -1014,7 +1015,7 @@ async def _run_fix_background(scan_id: str, entry: dict):
     """Run auto-fix in background and store results in B2."""
     import tempfile as _tmp
     try:
-        project_path = entry.get("project_dir", "")
+        project_path = entry.get("project_path", "") or entry.get("project_dir", "")
         if not project_path or not os.path.isdir(project_path):
             source_zip = b2_store.get_file(f"reports/{scan_id}-source.zip")
             if not source_zip:
