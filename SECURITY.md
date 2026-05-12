@@ -11,8 +11,9 @@
 ZeroFlaw is a security scanning tool — we take security seriously. If you discover a vulnerability:
 
 1. **DO NOT** open a public GitHub issue.
-2. Report via email: **lokesh.kashyap3440@gmail.com** (or your preferred contact).
-3. Include:
+2. Report privately via **GitHub's Private Vulnerability Reporting** at `https://github.com/Zeroflaw-web/zeroflaw-web/security/advisories`
+3. Or email: **lokesh.kashyap3440@gmail.com**
+4. Include:
    - Description of the vulnerability
    - Steps to reproduce (PoC preferred)
    - Affected versions/components
@@ -37,6 +38,18 @@ We'll keep you updated throughout the process and credit you in the release note
 
 - Third-party dependencies (report via their respective maintainers)
 - The scanners themselves (Bandit, Ruff, Semgrep, Trivy — report upstream)
+
+## Security Features
+
+This repository uses GitHub's built-in security tools:
+
+| Feature | Status |
+|---------|--------|
+| Branch protection (master) | ✅ PR + 1 review required |
+| Dependabot alerts | ✅ Weekly automated updates |
+| CodeQL analysis | ✅ Runs on every push/PR |
+| Secret scanning | ✅ Real-time detection |
+| Push protection | ✅ Blocks commits with secrets |
 
 ## Safe Harbor
 
