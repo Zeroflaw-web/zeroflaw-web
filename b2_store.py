@@ -99,8 +99,13 @@ def delete_file(b2_key: str) -> None:
 
 
 def put_file(b2_key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
-    """Upload a binary file to B2."""
+    """Upload a binary file to B2, overwriting any existing file."""
     bucket = _get_bucket()
+    try:
+        existing = bucket.download_file_by_name(b2_key)
+        bucket.delete_file_version(existing.download_version.id_, b2_key)
+    except (b2.exception.FileNotPresent, b2.exception.B2Error):
+        pass
     bucket.upload_bytes(data, b2_key, content_type=content_type)
 
 
