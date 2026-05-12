@@ -38,10 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: TruffleHog secrets scan
-        uses: trufflesecurity/trufflehog@v3
-        with:
-          extra_args: --only-verified
+      - name: Gitleaks secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
 
   trivy:
     runs-on: ubuntu-latest

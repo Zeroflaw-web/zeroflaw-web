@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import zipfile
 import xml.etree.ElementTree as ET
-from typing import List, Optional
+from typing import Optional
 
 
 def apply_fixes(source_dir: str, results: dict) -> list[dict]:

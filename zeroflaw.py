@@ -71,14 +71,13 @@ class C:
 SERVER_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SERVER_DIR))
 
-from server import (
+from server import (  # noqa: E402
     run_security_scan,
     run_code_linting,
     run_universal_security_scan,
     scan_npm_dependencies,
     scan_python_dependencies,
     run_owasp_dependency_check,
-    run_all_scans,
 )
 
 
@@ -209,7 +208,6 @@ def print_dependency_vulns(vulns, source):
     for v in vulns:
         sev = (v.get("severity", "UNDEFINED") or "UNDEFINED").upper()
         pkg = v.get("package_name", v.get("name", "?"))
-        vers = v.get("vulnerable_versions", v.get("version", "?"))
         desc = v.get("description", v.get("advisory", v.get("title", "")))
         fixed = v.get("fixed_version", v.get("patched_versions", ""))
         print_finding(pkg, "", sev, desc)
@@ -220,7 +218,8 @@ def print_dependency_vulns(vulns, source):
 
 def run_trivy(project_path):
     """Run Trivy filesystem scan for dependency vulnerabilities."""
-    import subprocess, shutil
+    import subprocess
+    import shutil
     trivy_path = shutil.which("trivy") or shutil.which("trivy.exe")
     if not trivy_path:
         return {"error": "Trivy not found. Install: winget install aquasecurity.Trivy or brew install trivy"}
@@ -284,8 +283,12 @@ def print_trivy_results(result):
     for v in all_vulns:
         fn = SEVERITY_COLORS.get(v["severity"], C.white)
         icon = SEVERITY_ICONS.get(v["severity"], " ")
-        print(f"    {icon} {fn(f'[{v["severity"]:>8}]')}  {C.white(v.get(chr(99)+chr(118)+chr(101), v.get("title", "?")))}")
-        print(f"          {C.dim(v['package'])} {C.gray(v['installed'])} {C.green(f'-> {v["fixed"]}' if v['fixed'] else '')}")
+        sev = v["severity"]
+        fixed = v["fixed"]
+        title = v.get("title", "")
+        cve = v.get(chr(99) + chr(118) + chr(101), title)
+        print(f"    {icon} {fn(f'[{sev:>8}]')}  {C.white(cve)}")
+        print(f"          {C.dim(v['package'])} {C.gray(v['installed'])} {C.green('-> ' + fixed if v['fixed'] else '')}")
         print(f"          {C.dim(v['target'])}")
         if v["title"]:
             print(f"          {C.gray(v['title'][:120])}")
@@ -720,9 +723,7 @@ def run_scan(target_path, args):
     width = 72
     print()
     print(C.bold(C.cyan("╔" + "═" * width + "╗")))
-    title = f" ZeroFlaw Security Scan "
-    pad = max(0, width - len(title) - 4)
-    print(C.bold(C.cyan("║")), C.bold(C.white(f"  🔍 ZeroFlaw Security Scan")), " " * (width - 31), C.bold(C.cyan("║")))
+    print(C.bold(C.cyan("║")), C.bold(C.white("  🔍 ZeroFlaw Security Scan")), " " * (width - 31), C.bold(C.cyan("║")))
     print(C.bold(C.cyan("║")), f"  {C.dim('Target:')} {C.bold(target_path)}", " " * max(0, width - len(target_path) - 13), C.bold(C.cyan("║")))
     print(C.bold(C.cyan("║")), f"  {C.dim('Time:')}  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", " " * (width - 41), C.bold(C.cyan("║")))
     print(C.bold(C.cyan("╚" + "═" * width + "╝")))
@@ -743,9 +744,6 @@ def run_scan(target_path, args):
             "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0
         }
     }
-
-    total_findings = 0
-    total_high = 0
 
     scan_list = []
 
@@ -938,7 +936,7 @@ def main():
                 results = json.load(f)
             try:
                 os.remove(results_file)
-            except:
+            except Exception:
                 pass
         else:
             print(f"{C.red('✗')} No results provided. Use --results <file> or --scan")

@@ -2,58 +2,45 @@ FROM python:3.11-slim
 
 LABEL description="ZeroFlaw Web — Multi-language security scanner"
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system deps + security tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    curl \
-    ca-certificates \
-    gnupg \
-    nodejs \
-    npm \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
-    libffi-dev \
-    shared-mime-info \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-# Install Python security tools
-RUN pip install --no-cache-dir bandit ruff semgrep pip-audit
+# Install system deps + Python security tools
+# hadolint ignore=DL3013
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git=1:2.39.* \
+    curl=7.88.* \
+    ca-certificates=20230311 \
+    gnupg=2.2.* \
+    nodejs=18.19.* \
+    npm=9.2.* \
+    libpango-1.0-0=1.50.* \
+    libpangocairo-1.0-0=1.50.* \
+    libgdk-pixbuf-2.0-0=2.42.* \
+    libffi-dev=3.4.* \
+    shared-mime-info=2.2.* \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir bandit ruff semgrep pip-audit
 
 # Install Trivy
 RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-# Create app directory
-WORKDIR /app
-
 # Copy requirements and install Python deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
-COPY server.py .
-COPY zeroflaw.py .
-COPY auto_fix.py .
-COPY mcp_server.py .
-COPY b2_store.py .
-COPY app.py .
-COPY pyproject.toml .
+COPY server.py zeroflaw.py auto_fix.py mcp_server.py b2_store.py app.py pyproject.toml ./
 COPY templates/ templates/
 
-# Install zeroflaw CLI command (non-fatal, web app works without it)
-RUN pip install -e . || echo "Warning: CLI install failed, continuing..."
-
-# Create uploads directory
+# Install zeroflaw CLI command (non-fatal, web app works without it) and create uploads dir
+RUN pip install --no-cache-dir -e . || echo "Warning: CLI install failed, continuing..."
 RUN mkdir -p uploads
-
-# Install additional security tools
-RUN echo "Installing additional security tools..." && \
-    # This is a placeholder for additional tool installation
-    echo "Additional tools installation would go here"
 
 # Expose port
 EXPOSE 8555

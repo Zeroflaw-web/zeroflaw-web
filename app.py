@@ -16,16 +16,13 @@ import tempfile
 import time
 import uuid
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import asyncio
 import httpx
 from weasyprint import HTML as WeasyHTML
-from fastapi import FastAPI, File, Form, UploadFile, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, File, Form, UploadFile, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -98,9 +95,9 @@ TEMP_SCANS_DIR.mkdir(exist_ok=True)
 
 sys.path.insert(0, str(SCANNER_DIR))
 
-import b2_store
+import b2_store  # noqa: E402
 
-from server import (
+from server import (  # noqa: E402
     run_security_scan,
     run_code_linting,
     run_universal_security_scan,
@@ -113,9 +110,6 @@ app = FastAPI(title="ZeroFlaw Web", version="1.0.0")
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Limit upload size
-from starlette.middleware import Middleware as _M
-from starlette.datastructures import MutableHeaders
-
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 @app.middleware("http")
@@ -621,9 +615,12 @@ def generate_pdf_report(target_name: str, results: dict, ai_summary: str = "", p
     critical, high, medium, low = sev_map["CRITICAL"], sev_map["HIGH"], sev_map["MEDIUM"], sev_map["LOW"]
 
     risk_level = "Low Risk"
-    if critical > 0: risk_level = "CRITICAL RISK"
-    elif high > 0: risk_level = "HIGH RISK"
-    elif medium > 2: risk_level = "MEDIUM RISK"
+    if critical > 0:
+        risk_level = "CRITICAL RISK"
+    elif high > 0:
+        risk_level = "HIGH RISK"
+    elif medium > 2:
+        risk_level = "MEDIUM RISK"
 
     # Trivy rows
     trivy_rows = ""
@@ -745,18 +742,28 @@ async def scan_project_stream(project_path: str, target_name: str):
     for root, dirs, files in os.walk(project_path):
         dirs[:] = [d for d in dirs if d not in (".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist")]
         for f in files:
-            if f.endswith(".py"): has_py = True
-            if f.endswith((".js", ".ts", ".jsx", ".tsx")): has_js = True
-            if f.endswith((".java", ".kt", ".kts")): has_java = True
-            if f.endswith(".go"): has_go = True
-            if f.endswith(".rs"): has_rs = True
+            if f.endswith(".py"):
+                has_py = True
+            if f.endswith((".js", ".ts", ".jsx", ".tsx")):
+                has_js = True
+            if f.endswith((".java", ".kt", ".kts")):
+                has_java = True
+            if f.endswith(".go"):
+                has_go = True
+            if f.endswith(".rs"):
+                has_rs = True
 
     lang_tags = []
-    if has_py: lang_tags.append("Python")
-    if has_js: lang_tags.append("JS/TS")
-    if has_java: lang_tags.append("Java")
-    if has_go: lang_tags.append("Go")
-    if has_rs: lang_tags.append("Rust")
+    if has_py:
+        lang_tags.append("Python")
+    if has_js:
+        lang_tags.append("JS/TS")
+    if has_java:
+        lang_tags.append("Java")
+    if has_go:
+        lang_tags.append("Go")
+    if has_rs:
+        lang_tags.append("Rust")
     lang_str = "/".join(lang_tags) if lang_tags else "multi-language"
 
     scans_to_run = []
@@ -861,7 +868,8 @@ async def scan_project_stream(project_path: str, target_name: str):
                             "message": label,
                             "match": match.group(0)[:40] + "...",
                         })
-            except: pass
+            except Exception:
+                pass
 
     secret_count = len(secret_findings)
     results["scans"]["secrets"] = {"results": secret_findings, "count": secret_count}
@@ -1388,14 +1396,14 @@ def format_results_markdown(target_name: str, results: dict) -> str:
 
 
 # ── MCP Server (served from same app to avoid Cloudflare 421) ─────────
-from mcp.server.fastmcp import FastMCP as _FastMCP
+from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: E402
 _mcp = _FastMCP("ZeroFlaw Security Scanner")
 
-from mcp_server import register_tools as _reg_mcp
+from mcp_server import register_tools as _reg_mcp  # noqa: E402
 _reg_mcp(_mcp)
 
-import starlette.middleware.cors as _cors
-import starlette.middleware.trustedhost as _th
+import starlette.middleware.cors as _cors  # noqa: E402
+import starlette.middleware.trustedhost as _th  # noqa: E402
 _mcp_app = _mcp.sse_app()
 _mcp_app.add_middleware(_cors.CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 _mcp_app.add_middleware(_th.TrustedHostMiddleware, allowed_hosts=["*"])
