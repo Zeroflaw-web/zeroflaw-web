@@ -11,7 +11,6 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system deps + Python security tools
-# hadolint ignore=DL3008,DL3013
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -33,7 +32,6 @@ RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/
 
 # Copy requirements and install Python deps
 COPY requirements.txt .
-# hadolint ignore=DL3013
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
@@ -41,7 +39,6 @@ COPY server.py zeroflaw.py auto_fix.py mcp_server.py b2_store.py app.py pyprojec
 COPY templates/ templates/
 
 # Install zeroflaw CLI command (non-fatal, web app works without it) and create uploads dir
-# hadolint ignore=DL3013
 RUN pip install --no-cache-dir -e . || echo "Warning: CLI install failed, continuing..."
 RUN mkdir -p uploads && chmod 777 uploads
 
