@@ -995,6 +995,20 @@ async def _run_scan_background(
         except Exception:
             pass
 
+        # Save source zip first — needed by fix/run, must survive Render hibernation
+        try:
+            zip_buf = io.BytesIO()
+            _skip = {".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist", ".ruff_cache", ".bandit_cache", ".semgrep_logs", ".mypy_cache", ".pytest_cache", "__pycache__"}
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(project_path):
+                    dirs[:] = [d for d in dirs if d not in _skip]
+                    for fn in files:
+                        path = os.path.join(root, fn)
+                        zf.write(path, os.path.relpath(path, project_path))
+            b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
+        except Exception:
+            pass
+
         # Everything below is best-effort — failures won't block the report
         try:
             ai_summary, provider_name = await generate_ai_report_summary(api_key, target_name, results, provider)
@@ -1015,19 +1029,6 @@ async def _run_scan_background(
             pdf_bytes = generate_pdf_report(target_name, results, ai_summary, provider_name)
             if pdf_bytes:
                 b2_store.put_file(f"reports/{scan_id}.pdf", pdf_bytes, "application/pdf")
-        except Exception:
-            pass
-
-        try:
-            zip_buf = io.BytesIO()
-            _skip = {".venv", "venv", "node_modules", ".git", "__pycache__", "target", "build", "dist", ".ruff_cache", ".bandit_cache", ".semgrep_logs", ".mypy_cache", ".pytest_cache", "__pycache__"}
-            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for root, dirs, files in os.walk(project_path):
-                    dirs[:] = [d for d in dirs if d not in _skip]
-                    for fn in files:
-                        path = os.path.join(root, fn)
-                        zf.write(path, os.path.relpath(path, project_path))
-            b2_store.put_file(f"reports/{scan_id}-source.zip", zip_buf.getvalue(), "application/zip")
         except Exception:
             pass
 
