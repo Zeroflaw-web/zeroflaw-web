@@ -709,11 +709,23 @@ def generate_pdf_report(target_name: str, results: dict, ai_summary: str = "", p
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
+def _ensure_trivy_db(trivy: str) -> None:
+    """Best-effort pre-download Trivy vulnerability DB so the scan can use --skip-db-update."""
+    try:
+        subprocess.run(
+            [trivy, "image", "--download-db-only", "--quiet"],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception:
+        pass
+
+
 def run_trivy_safe(path: str) -> dict:
     """Run Trivy on a path, returning structured results."""
     trivy = shutil.which("trivy")
     if not trivy:
         return {"error": "Trivy not installed"}
+    _ensure_trivy_db(trivy)
     try:
         result = subprocess.run(
             [trivy, "fs", "--format", "json", "--quiet", "--skip-db-update", "--", path],
@@ -909,6 +921,25 @@ async def scan_project_stream(project_path: str, target_name: str):
 # Avoids Render's 60s response timeout: POST returns immediately with
 # a redirect to a progress page; the scan runs in the background.
 
+async def _scan_and_collect(scan_id: str, project_path: str, target_name: str):
+    """Run the scan stream, persist steps to B2, and return results."""
+    results = None
+    async for event in scan_project_stream(project_path, target_name):
+        if event.startswith("data: "):
+            data = json.loads(event[6:].strip())
+            entry = b2_store.get(scan_id) or {}
+            steps = entry.get("steps", [])
+            steps.append(data)
+            entry["steps"] = steps
+            try:
+                b2_store.put(scan_id, entry)
+            except Exception:
+                pass
+            if data.get("type") == "done":
+                results = data["results"]
+    return results
+
+
 async def _run_scan_background(
     scan_id: str, project_path: str, target_name: str,
     api_key: str, provider: str,
@@ -917,6 +948,8 @@ async def _run_scan_background(
     
     Updates steps in real-time so the progress page sees each step
     as it happens, rather than all at once after the scan finishes.
+    Has a global 10-minute timeout to prevent any single scanner
+    from hanging the entire scan indefinitely.
     """
     try:
         b2_store.put(scan_id, {
@@ -927,20 +960,20 @@ async def _run_scan_background(
         pass  # B2 may not be configured; scan proceeds without persistence
 
     try:
-        results = None
-        async for event in scan_project_stream(project_path, target_name):
-            if event.startswith("data: "):
-                data = json.loads(event[6:].strip())
-                entry = b2_store.get(scan_id) or {}
-                steps = entry.get("steps", [])
-                steps.append(data)
-                entry["steps"] = steps
-                try:
-                    b2_store.put(scan_id, entry)
-                except Exception:
-                    pass  # best-effort persistence; stream continues regardless
-                if data.get("type") == "done":
-                    results = data["results"]
+        try:
+            results = await asyncio.wait_for(
+                _scan_and_collect(scan_id, project_path, target_name),
+                timeout=600,
+            )
+        except asyncio.TimeoutError:
+            entry = b2_store.get(scan_id) or {}
+            entry["status"] = "error"
+            entry["error"] = "Scan timed out after 10 minutes — one or more scanners hung"
+            try:
+                b2_store.put(scan_id, entry)
+            except Exception:
+                pass
+            return
 
         if not results:
             entry = b2_store.get(scan_id) or {}
@@ -1383,7 +1416,7 @@ def run_scans_sync(project_path: str) -> dict:
             futures[pool.submit(scan_npm_dependencies, project_path)] = "npm_audit"
         if os.path.isfile(os.path.join(project_path, "requirements.txt")):
             futures[pool.submit(scan_python_dependencies, project_path)] = "pip_audit"
-        done, not_done = _wait(futures, timeout=60)
+        done, not_done = _wait(futures, timeout=300)
         for future in not_done:
             future.cancel()
         for future in done:

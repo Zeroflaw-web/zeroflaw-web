@@ -224,6 +224,13 @@ def run_trivy(project_path):
     if not trivy_path:
         return {"error": "Trivy not found. Install: winget install aquasecurity.Trivy or brew install trivy"}
     try:
+        subprocess.run(
+            [trivy_path, "image", "--download-db-only", "--quiet"],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception:
+        pass
+    try:
         result = subprocess.run(
             [trivy_path, "fs", "--format", "json", "--quiet", "--skip-db-update", project_path],
             capture_output=True, text=True, timeout=120

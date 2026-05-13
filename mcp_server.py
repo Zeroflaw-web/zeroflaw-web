@@ -300,12 +300,19 @@ def run_trivy(path: str) -> dict:
     if not trivy:
         return {"error": "Trivy not installed"}
     try:
+        subprocess.run(
+            [trivy, "image", "--download-db-only", "--quiet"],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception:
+        pass
+    try:
         result = subprocess.run(
             [trivy, "fs", "--format", "json", "--quiet", "--skip-db-update", "--", path],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode not in (0, 1):
-            return {"error": "Trivy failed"}
+            return {"error": f"Trivy failed: {result.stderr[:200]}"}
         data = json.loads(result.stdout) if result.stdout.strip() else {"Results": []}
         return data
     except subprocess.TimeoutExpired:
