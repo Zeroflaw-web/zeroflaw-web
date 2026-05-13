@@ -45,9 +45,9 @@ RUN mkdir -p uploads && chmod 777 uploads
 # Expose port
 EXPOSE 8555
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8555/health')" || exit 1
+# Health check — uses PORT so it stays in sync with the runtime port
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",8555)}/health')" || exit 1
 
 # Run web app — use PORT env var (Render sets this) with fallback to 8555
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8555}"]
