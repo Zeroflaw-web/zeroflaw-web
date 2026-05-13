@@ -10,3 +10,5 @@ AGENTS.md
 .env
 .env.example
 results.json
+
+graphify-out/
