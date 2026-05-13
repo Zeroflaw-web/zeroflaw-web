@@ -1,3 +1,12 @@
+---
+title: ZeroFlaw Web
+emoji: 🛡️
+colorFrom: blue
+colorTo: cyan
+sdk: docker
+pinned: false
+---
+
 # ZeroFlaw Web 🔍
 
 Multi-language security scanner web app with AI-powered reports. Upload a ZIP or paste a GitHub URL — get a comprehensive security analysis with Bandit, Ruff, Semgrep, Trivy, and secrets detection.
