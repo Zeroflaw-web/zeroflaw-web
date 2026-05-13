@@ -1391,6 +1391,8 @@ async def fix_run(scan_id: str):
     entry["steps"] = [{"type": "running", "text": "Applying fixes..."}]
     b2_store.put(scan_id, entry)
     asyncio.create_task(_run_fix_background(scan_id, entry))
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/progress/{scan_id}", status_code=302)
 
 
 # ── Sync scan helpers (for MCP tools) ────────────────────────────────
